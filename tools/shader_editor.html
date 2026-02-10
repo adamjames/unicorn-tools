@@ -1,0 +1,1955 @@
+
+<!doctype html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Unicorn Shader Editor</title>
+        <link
+            rel="stylesheet"
+            href="https://prismjs.com/themes/prism-tomorrow.css"
+        />
+        <link rel="stylesheet" href="https://live.prismjs.com/prism-live.css" />
+        <style>
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    monospace;
+                background: #1a1a2e;
+                color: #eee;
+                min-height: 100vh;
+                padding: 20px;
+            }
+            .container {
+                max-width: 1000px;
+                margin: 0 auto;
+            }
+            h1 {
+                font-size: 1.5em;
+                color: #16c79a;
+                margin-bottom: 15px;
+            }
+            .panel {
+                background: #16213e;
+                border-radius: 8px;
+                padding: 15px;
+                margin-bottom: 15px;
+            }
+            label {
+                display: block;
+                font-size: 0.85em;
+                color: #888;
+                margin-bottom: 5px;
+            }
+            /* Code editor container */
+            .editor-container {
+                border: 1px solid #333;
+                border-radius: 4px;
+                overflow: hidden;
+            }
+            .editor-container:focus-within {
+                border-color: #16c79a;
+            }
+            /* Prism Live styling */
+            div.prism-live {
+                background: #2d2d2d;
+                min-height: 380px;
+                max-height: 500px;
+            }
+            textarea.prism-live,
+            pre.prism-live {
+                font-family:
+                    "Fira Code", "Consolas", "Monaco", monospace !important;
+                font-size: 13px !important;
+                line-height: 1.5 !important;
+                tab-size: 2 !important;
+                padding: 10px !important;
+            }
+            pre.prism-live {
+                background: #2d2d2d !important;
+                margin: 0 !important;
+            }
+            pre.prism-live code {
+                font-family: inherit !important;
+                font-size: inherit !important;
+            }
+
+            .controls {
+                display: flex;
+                gap: 10px;
+                margin-top: 15px;
+                flex-wrap: wrap;
+                align-items: center;
+            }
+            button {
+                background: #16c79a;
+                color: #1a1a2e;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            button:hover {
+                background: #1dd1a1;
+            }
+            button:disabled {
+                background: #444;
+                color: #888;
+                cursor: not-allowed;
+            }
+            button.stop {
+                background: #e74c3c;
+                color: white;
+            }
+            button.stop:hover {
+                background: #ff6b6b;
+            }
+            button.secondary {
+                background: #3d5a80;
+                color: white;
+            }
+            button.secondary:hover {
+                background: #4a6fa5;
+            }
+            .status {
+                font-size: 13px;
+                color: #888;
+                margin-left: auto;
+            }
+            .status.ok {
+                color: #16c79a;
+            }
+            .status.error {
+                color: #e74c3c;
+            }
+            select,
+            input[type="text"] {
+                background: #0f0f23;
+                color: #ccc;
+                border: 1px solid #333;
+                padding: 8px;
+                border-radius: 4px;
+                font-size: 14px;
+            }
+            select {
+                min-width: 200px;
+            }
+            input[type="text"] {
+                width: 200px;
+            }
+            .help {
+                font-size: 12px;
+                color: #666;
+                line-height: 1.6;
+                margin-top: 15px;
+            }
+            .help code {
+                background: #0f0f23;
+                padding: 1px 4px;
+                border-radius: 2px;
+                color: #ccccff;
+            }
+            .shader-row {
+                display: flex;
+                gap: 10px;
+                align-items: flex-end;
+                flex-wrap: wrap;
+            }
+            .shader-row > div {
+                flex: 1;
+                min-width: 150px;
+            }
+            .shader-actions {
+                display: flex;
+                gap: 5px;
+                flex: 0 !important;
+            }
+            .divider {
+                border-top: 1px solid #333;
+                margin: 10px 0;
+                padding-top: 10px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Unicorn Shader Editor</h1>
+
+            <div class="panel">
+                <div class="shader-row">
+                    <div>
+                        <label>Shader</label>
+                        <select
+                            id="shaderSelect"
+                            onchange="loadShader()"
+                        ></select>
+                    </div>
+                    <div class="shader-actions">
+                        <button class="secondary" onclick="saveShader()">
+                            Save
+                        </button>
+                        <button
+                            class="stop"
+                            onclick="deleteShader()"
+                            id="deleteBtn"
+                        >
+                            Delete
+                        </button>
+                    </div>
+                </div>
+                <div class="divider"></div>
+                <div class="shader-row">
+                    <div>
+                        <label>Save as new</label>
+                        <input
+                            type="text"
+                            id="newName"
+                            placeholder="my_shader"
+                        />
+                    </div>
+                    <div class="shader-actions">
+                        <button class="secondary" onclick="saveAsNew()">
+                            Save As
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <label>Lua Shader Code</label>
+                <div class="editor-container">
+                    <textarea
+                        id="shader"
+                        class="prism-live language-lua"
+                        style="--height: 380px"
+                        spellcheck="false"
+                    ></textarea>
+                </div>
+
+                <div class="controls">
+                    <button id="deployBtn" onclick="deploy()">
+                        Deploy to Device
+                    </button>
+                    <button id="unloadBtn" class="stop" onclick="unload()">
+                        Stop Shader
+                    </button>
+                    <span id="status" class="status"></span>
+                </div>
+
+                <div class="help">
+                    <strong>Function:</strong>
+                    <code>function shader(x, y, t, frame, dt)</code><br />
+                    <strong>Parameters:</strong>
+                    <code>x</code>, <code>y</code> (0-31),
+                    <code>t</code> (seconds), <code>frame</code> (count),
+                    <code>dt</code> (delta)<br />
+                    <strong>Return:</strong> <code>r, g, b</code> (0-255
+                    each)<br />
+                    <strong>Math:</strong>
+                    <code>math.sin</code>, <code>math.cos</code>,
+                    <code>math.sqrt</code>, <code>math.floor</code>,
+                    <code>math.abs</code>, <code>math.pi</code>,
+                    <code>math.min</code>, <code>math.max</code>,
+                    <code>math.random()</code>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://blissfuljs.com/bliss.shy.min.js"></script>
+        <script src="https://prismjs.com/prism.js" data-manual></script>
+        <script src="https://prismjs.com/components/prism-lua.min.js"></script>
+        <script src="https://live.prismjs.com/src/prism-live.js?load=lua"></script>
+        <script>
+            const BUILTIN_SHADERS = {
+                // === TUTORIAL SHADERS ===
+                tut_01_solid: {
+                    name: "Tutorial 1: Solid Color",
+                    code: `-- TUTORIAL 1: Solid Color
+-- The simplest shader - every pixel is the same color
+--
+-- The shader function is called once for each pixel.
+-- Return values r, g, b set the pixel color (0-255 each).
+-- Try changing these values!
+
+function shader(x, y, t, frame, dt)
+  local r = 255   -- Red (0-255)
+  local g = 100   -- Green (0-255)
+  local b = 50    -- Blue (0-255)
+
+  return r, g, b
+end
+
+-- EXERCISES:
+-- 1. Make the display pure red (255, 0, 0)
+-- 2. Make it cyan (0, 255, 255)
+-- 3. Make it white (255, 255, 255)
+-- 4. Make it a dim purple`,
+                },
+                tut_02_position: {
+                    name: "Tutorial 2: Using Position",
+                    code: `-- TUTORIAL 2: Using Position
+-- x goes from 0 (left) to 31 (right)
+-- y goes from 0 (top) to 31 (bottom)
+--
+-- We can use position to create gradients!
+
+function shader(x, y, t, frame, dt)
+  -- Horizontal gradient: brightness increases left to right
+  -- x/31 gives us 0.0 to 1.0, multiply by 255 for full range
+  local brightness = (x / 31) * 255
+
+  return brightness, brightness, brightness
+end
+
+-- EXERCISES:
+-- 1. Make a vertical gradient (use y instead of x)
+-- 2. Make red increase left-to-right, blue increase top-to-bottom
+-- 3. Try: local brightness = ((x + y) / 62) * 255
+-- 4. Invert it: (1 - x/31) * 255`,
+                },
+                tut_03_time: {
+                    name: "Tutorial 3: Animation with Time",
+                    code: `-- TUTORIAL 3: Animation with Time
+-- t = time in seconds since shader started
+-- Use math.sin(t) to create smooth oscillation
+--
+-- math.sin() returns values from -1 to +1
+-- We shift and scale to get 0 to 255
+
+function shader(x, y, t, frame, dt)
+  -- Oscillate between 0 and 255
+  -- math.sin(t) returns -1 to 1
+  -- * 127 + 128 shifts this to 0-255 range
+  local pulse = math.sin(t * 2) * 127 + 128
+
+  return pulse, 0, pulse  -- Pulsing magenta
+end
+
+-- EXERCISES:
+-- 1. Change the speed: try t * 5 (faster) or t * 0.5 (slower)
+-- 2. Make RGB pulse at different speeds:
+--    r = math.sin(t) * 127 + 128
+--    g = math.sin(t * 1.5) * 127 + 128
+--    b = math.sin(t * 2) * 127 + 128
+-- 3. Add position: math.sin(t + x * 0.2) creates a wave!`,
+                },
+                tut_04_waves: {
+                    name: "Tutorial 4: Sine Waves",
+                    code: `-- TUTORIAL 4: Sine Waves
+-- Combining position and time creates animated waves
+--
+-- math.sin(x * frequency + t * speed)
+-- - frequency: how many waves fit across the screen
+-- - speed: how fast the waves move
+
+function shader(x, y, t, frame, dt)
+  -- Create a horizontal wave
+  -- x * 0.3 = wave frequency (higher = more waves)
+  -- t * 2 = wave speed (higher = faster)
+  local wave = math.sin(x * 0.3 + t * 2)
+
+  -- Normalize from -1,1 to 0,255
+  local brightness = wave * 127 + 128
+
+  return 0, brightness, brightness  -- Cyan waves
+end
+
+-- EXERCISES:
+-- 1. Change 0.3 to 0.5 (more waves) or 0.1 (fewer waves)
+-- 2. Add vertical waves: math.sin(y * 0.3 + t * 2)
+-- 3. Combine both:
+--    wave = math.sin(x * 0.3 + t) + math.sin(y * 0.3 + t)
+--    brightness = (wave / 2) * 127 + 128`,
+                },
+                tut_05_distance: {
+                    name: "Tutorial 5: Distance & Circles",
+                    code: `-- TUTORIAL 5: Distance & Circles
+-- Calculate distance from center to create circular patterns
+--
+-- Distance formula: sqrt((x-cx)² + (y-cy)²)
+-- This is the foundation for many effects!
+
+function shader(x, y, t, frame, dt)
+  -- Center of the display
+  local cx, cy = 15.5, 15.5
+
+  -- Distance from current pixel to center
+  local dx = x - cx
+  local dy = y - cy
+  local dist = math.sqrt(dx * dx + dy * dy)
+
+  -- Create rings using sine of distance
+  local rings = math.sin(dist - t * 3) * 127 + 128
+
+  return rings, rings * 0.5, 0  -- Orange rings
+end
+
+-- EXERCISES:
+-- 1. Move the center: try cx, cy = 0, 0 (corner)
+-- 2. Change ring spacing: dist * 0.5 (wider) or dist * 2 (tighter)
+-- 3. Remove animation: math.sin(dist) (static rings)
+-- 4. Reverse direction: dist + t * 3 (expand outward)`,
+                },
+                tut_06_hsv: {
+                    name: "Tutorial 6: HSV Color",
+                    code: `-- TUTORIAL 6: HSV Color
+-- HSV (Hue, Saturation, Value) is easier for rainbows!
+-- - Hue: 0-1 cycles through all colors (red->yellow->green->cyan->blue->magenta->red)
+-- - Saturation: 0-1 (0=gray, 1=vivid color)
+-- - Value: 0-1 (0=black, 1=full brightness)
+
+function hsv(h, s, v)
+  -- Convert HSV to RGB
+  local i = math.floor(h * 6)
+  local f = h * 6 - i
+  local p = v * (1 - s)
+  local q = v * (1 - f * s)
+  local t = v * (1 - (1 - f) * s)
+  local m = i % 6
+  if m == 0 then return v, t, p
+  elseif m == 1 then return q, v, p
+  elseif m == 2 then return p, v, t
+  elseif m == 3 then return p, q, v
+  elseif m == 4 then return t, p, v
+  else return v, p, q end
+end
+
+function shader(x, y, t, frame, dt)
+  -- Hue changes with position and time
+  local hue = (x / 32 + t * 0.2) % 1
+
+  local r, g, b = hsv(hue, 1, 1)
+  return r * 255, g * 255, b * 255
+end
+
+-- EXERCISES:
+-- 1. Rainbow based on y: hue = (y / 32 + t * 0.2) % 1
+-- 2. Circular rainbow: hue = (dist / 20 + t * 0.2) % 1
+-- 3. Try lower saturation: hsv(hue, 0.5, 1) for pastel colors
+-- 4. Pulse brightness: hsv(hue, 1, math.sin(t) * 0.5 + 0.5)`,
+                },
+                tut_07_combining: {
+                    name: "Tutorial 7: Combining Effects",
+                    code: `-- TUTORIAL 7: Combining Multiple Effects
+-- Real shaders combine multiple techniques!
+-- Here we combine: waves + distance + HSV color
+
+function hsv(h, s, v)
+  local i = math.floor(h * 6)
+  local f = h * 6 - i
+  local p = v * (1 - s)
+  local q = v * (1 - f * s)
+  local t = v * (1 - (1 - f) * s)
+  local m = i % 6
+  if m == 0 then return v, t, p
+  elseif m == 1 then return q, v, p
+  elseif m == 2 then return p, v, t
+  elseif m == 3 then return p, q, v
+  elseif m == 4 then return t, p, v
+  else return v, p, q end
+end
+
+function shader(x, y, t, frame, dt)
+  local cx, cy = 15.5, 15.5
+  local dx, dy = x - cx, y - cy
+  local dist = math.sqrt(dx * dx + dy * dy)
+
+  -- Combine multiple sine waves
+  local wave1 = math.sin(x * 0.3 + t)
+  local wave2 = math.sin(y * 0.3 + t * 0.7)
+  local wave3 = math.sin(dist * 0.4 - t * 2)
+
+  -- Average them together
+  local combined = (wave1 + wave2 + wave3) / 3
+
+  -- Use combined value for hue
+  local hue = (combined * 0.5 + 0.5 + t * 0.1) % 1
+  local brightness = combined * 0.3 + 0.7
+
+  local r, g, b = hsv(hue, 0.8, brightness)
+  return r * 255, g * 255, b * 255
+end
+
+-- EXERCISES:
+-- 1. Add a fourth wave with diagonal: math.sin((x+y) * 0.2 + t)
+-- 2. Use distance for saturation instead of brightness
+-- 3. Make the center brighter: brightness = 1 - dist/30`,
+                },
+                tut_08_conditionals: {
+                    name: "Tutorial 8: Conditionals & Shapes",
+                    code: `-- TUTORIAL 8: Conditionals & Shapes
+-- Use if/else to create distinct regions
+-- Great for shapes, patterns, and game-like graphics
+
+function shader(x, y, t, frame, dt)
+  local cx, cy = 15.5, 15.5
+  local dx, dy = x - cx, y - cy
+  local dist = math.sqrt(dx * dx + dy * dy)
+
+  -- Animated radius
+  local radius = 8 + math.sin(t * 2) * 4
+
+  if dist < radius then
+    -- Inside the circle: bright color
+    local hue = (t * 0.3) % 1
+    local h = hue * 6
+    local i = math.floor(h) % 6
+    local f = h - math.floor(h)
+    local r, g, b
+    if i == 0 then r, g, b = 1, f, 0
+    elseif i == 1 then r, g, b = 1-f, 1, 0
+    elseif i == 2 then r, g, b = 0, 1, f
+    elseif i == 3 then r, g, b = 0, 1-f, 1
+    elseif i == 4 then r, g, b = f, 0, 1
+    else r, g, b = 1, 0, 1-f end
+    return r * 255, g * 255, b * 255
+  else
+    -- Outside: dark background
+    return 10, 10, 30
+  end
+end
+
+-- EXERCISES:
+-- 1. Add a ring: if dist < radius and dist > radius - 2
+-- 2. Make a square: if math.abs(dx) < 8 and math.abs(dy) < 8
+-- 3. Combine shapes with 'or' for multiple objects
+-- 4. Animate position: cx = 15.5 + math.sin(t) * 8`,
+                },
+
+                // === 3D CUBE TUTORIAL SERIES ===
+                // These tutorials build up to the rotating 3D cube,
+                // explaining each concept step by step.
+
+                cube_01_framebuffer: {
+                    name: "3D Cube 1: Framebuffer",
+                    code: `-- 3D CUBE TUTORIAL 1: The Framebuffer
+--
+-- PROBLEM: Our shader function is called once per pixel (1024 times
+-- per frame). If we do expensive calculations in shader(), we do
+-- them 1024 times! That's slow.
+--
+-- SOLUTION: Use a "framebuffer" - an array that stores the color
+-- for each pixel. We calculate once, store the results, then each
+-- pixel just reads its value. This is O(1) per pixel!
+--
+-- Think of it like pre-computing answers vs calculating each time.
+
+local WIDTH = 32
+local HEIGHT = 32
+local fb = {}           -- framebuffer: fb[y * WIDTH + x] = brightness
+local last_frame = -1   -- track which frame we've computed
+
+-- Fill framebuffer with a pattern (once per frame)
+local function render_frame(t)
+  for py = 0, HEIGHT - 1 do
+    for px = 0, WIDTH - 1 do
+      -- Simple moving diagonal pattern
+      local val = (px + py + math.floor(t * 10)) % 16
+      fb[py * WIDTH + px] = val * 16  -- 0-255 brightness
+    end
+  end
+end
+
+function shader(x, y, t, frame, dt)
+  -- Only render once per frame (not 1024 times!)
+  if frame ~= last_frame then
+    last_frame = frame
+    render_frame(t)
+  end
+
+  -- Just read the pre-computed value - super fast!
+  local brightness = fb[y * WIDTH + x] or 0
+  return 0, brightness, brightness
+end
+
+-- EXERCISE: Change the pattern in render_frame()
+-- Try: local val = math.sin(px * 0.2 + t) * 127 + 128`,
+                },
+
+                cube_02_line: {
+                    name: "3D Cube 2: Drawing Lines",
+                    code: `-- 3D CUBE TUTORIAL 2: Bresenham's Line Algorithm
+--
+-- To draw a wireframe, we need to draw lines between points.
+-- But pixels are discrete! We can't draw a "true" line.
+--
+-- BRESENHAM'S ALGORITHM solves this:
+-- 1. Track an "error" - how far we've drifted from the true line
+-- 2. Always step along the main axis (the longer direction)
+-- 3. When error gets too big, step in the other direction too
+--
+-- This draws the pixels that best approximate a straight line.
+
+local WIDTH, HEIGHT = 32, 32
+local fb = {}
+local last_frame = -1
+
+-- Draw a line into the framebuffer
+local function draw_line(x0, y0, x1, y1, brightness)
+  -- Round to integers
+  x0, y0 = math.floor(x0 + 0.5), math.floor(y0 + 0.5)
+  x1, y1 = math.floor(x1 + 0.5), math.floor(y1 + 0.5)
+
+  local dx = math.abs(x1 - x0)        -- horizontal distance
+  local dy = -math.abs(y1 - y0)       -- vertical distance (negative)
+  local sx = x0 < x1 and 1 or -1      -- x step direction
+  local sy = y0 < y1 and 1 or -1      -- y step direction
+  local err = dx + dy                 -- error term
+
+  while true do
+    -- Set this pixel
+    if x0 >= 0 and x0 < WIDTH and y0 >= 0 and y0 < HEIGHT then
+      fb[y0 * WIDTH + x0] = brightness
+    end
+
+    -- Reached the end?
+    if x0 == x1 and y0 == y1 then break end
+
+    -- Decide which direction(s) to step
+    local e2 = 2 * err
+    if e2 >= dy then err = err + dy; x0 = x0 + sx end  -- step in x
+    if e2 <= dx then err = err + dx; y0 = y0 + sy end  -- step in y
+  end
+end
+
+local function clear_fb()
+  for i = 0, WIDTH * HEIGHT - 1 do fb[i] = 0 end
+end
+
+function shader(x, y, t, frame, dt)
+  if frame ~= last_frame then
+    last_frame = frame
+    clear_fb()
+
+    -- Draw some animated lines
+    local cx, cy = 15.5, 15.5
+    for i = 0, 5 do
+      local angle = t + i * math.pi / 3
+      local ex = cx + math.cos(angle) * 14
+      local ey = cy + math.sin(angle) * 14
+      draw_line(cx, cy, ex, ey, 255)
+    end
+  end
+
+  local val = fb[y * WIDTH + x] or 0
+  return 0, val, 0
+end
+
+-- EXERCISE: Draw a triangle using three draw_line() calls`,
+                },
+
+                cube_03_points3d: {
+                    name: "3D Cube 3: 3D Points",
+                    code: `-- 3D CUBE TUTORIAL 3: Representing 3D Points
+--
+-- A 3D point has three coordinates: x, y, z
+-- - x: left/right
+-- - y: up/down
+-- - z: forward/back (into/out of screen)
+--
+-- We store points as tables with x, y, z fields.
+-- A cube has 8 corners (vertices), all combinations of +/- on each axis.
+
+local WIDTH, HEIGHT = 32, 32
+local fb = {}
+local last_frame = -1
+
+-- Cube vertices: 8 corners at +/- 0.5 on each axis
+local CUBE_SIZE = 0.5
+local S = CUBE_SIZE
+local vertices = {
+  {x =  S, y =  S, z =  S},  -- front top right
+  {x = -S, y =  S, z =  S},  -- front top left
+  {x = -S, y = -S, z =  S},  -- front bottom left
+  {x =  S, y = -S, z =  S},  -- front bottom right
+  {x =  S, y =  S, z = -S},  -- back top right
+  {x = -S, y =  S, z = -S},  -- back top left
+  {x = -S, y = -S, z = -S},  -- back bottom left
+  {x =  S, y = -S, z = -S},  -- back bottom right
+}
+
+-- For now, just project by ignoring z (orthographic)
+-- We'll add perspective in the next tutorial!
+local function project_simple(p)
+  return {
+    x = 15.5 + p.x * 20,  -- scale and center
+    y = 15.5 - p.y * 20   -- y is flipped (screen y goes down)
+  }
+end
+
+local function set_pixel(px, py, val)
+  px, py = math.floor(px + 0.5), math.floor(py + 0.5)
+  if px >= 0 and px < WIDTH and py >= 0 and py < HEIGHT then
+    fb[py * WIDTH + px] = val
+  end
+end
+
+function shader(x, y, t, frame, dt)
+  if frame ~= last_frame then
+    last_frame = frame
+    for i = 0, WIDTH * HEIGHT - 1 do fb[i] = 10 end
+
+    -- Draw each vertex as a dot
+    for i, v in ipairs(vertices) do
+      local p = project_simple(v)
+      -- Draw a 2x2 dot
+      set_pixel(p.x, p.y, 255)
+      set_pixel(p.x + 1, p.y, 255)
+      set_pixel(p.x, p.y + 1, 255)
+      set_pixel(p.x + 1, p.y + 1, 255)
+    end
+  end
+
+  return 0, fb[y * WIDTH + x] or 0, 0
+end
+
+-- EXERCISE: Try changing CUBE_SIZE to make it bigger/smaller`,
+                },
+
+                cube_04_rotation: {
+                    name: "3D Cube 4: Rotation",
+                    code: `-- 3D CUBE TUTORIAL 4: Rotation Matrices
+--
+-- To rotate a point around an axis, we use trigonometry.
+--
+-- ROTATION AROUND Y AXIS (spinning left/right):
+--   new_x = x * cos(angle) - z * sin(angle)
+--   new_z = x * sin(angle) + z * cos(angle)
+--   y stays the same
+--
+-- This comes from the 2D rotation formula applied to the x-z plane.
+-- cos/sin trace out a circle as angle changes!
+
+local WIDTH, HEIGHT = 32, 32
+local fb = {}
+local last_frame = -1
+
+local S = 0.5
+local vertices = {
+  {x= S,y= S,z= S}, {x=-S,y= S,z= S}, {x=-S,y=-S,z= S}, {x= S,y=-S,z= S},
+  {x= S,y= S,z=-S}, {x=-S,y= S,z=-S}, {x=-S,y=-S,z=-S}, {x= S,y=-S,z=-S},
+}
+
+-- ROTATION: The key formula!
+local function rotate_y(p, angle)
+  local c, s = math.cos(angle), math.sin(angle)
+  return {
+    x = p.x * c - p.z * s,  -- mix of old x and z
+    y = p.y,                 -- y unchanged
+    z = p.x * s + p.z * c   -- mix of old x and z
+  }
+end
+
+local function project_simple(p)
+  return { x = 15.5 + p.x * 20, y = 15.5 - p.y * 20 }
+end
+
+local function set_pixel(px, py, val)
+  px, py = math.floor(px + 0.5), math.floor(py + 0.5)
+  if px >= 0 and px < WIDTH and py >= 0 and py < HEIGHT then
+    fb[py * WIDTH + px] = val
+  end
+end
+
+function shader(x, y, t, frame, dt)
+  if frame ~= last_frame then
+    last_frame = frame
+    for i = 0, WIDTH * HEIGHT - 1 do fb[i] = 10 end
+
+    local angle = t  -- rotate based on time!
+
+    for i, v in ipairs(vertices) do
+      local rotated = rotate_y(v, angle)  -- apply rotation
+      local p = project_simple(rotated)
+      set_pixel(p.x, p.y, 255)
+      set_pixel(p.x + 1, p.y, 255)
+      set_pixel(p.x, p.y + 1, 255)
+      set_pixel(p.x + 1, p.y + 1, 255)
+    end
+  end
+
+  return 0, fb[y * WIDTH + x] or 0, 0
+end
+
+-- EXERCISE: Add rotate_x() for up/down tilt:
+-- new_y = y * cos - z * sin
+-- new_z = y * sin + z * cos
+-- x stays the same`,
+                },
+
+                cube_05_perspective: {
+                    name: "3D Cube 5: Perspective",
+                    code: `-- 3D CUBE TUTORIAL 5: Perspective Projection
+--
+-- THE MAGIC FORMULA: x_screen = x / z,  y_screen = y / z
+--
+-- Why does this work? Things further away look smaller!
+-- Dividing by z makes distant points (large z) map to
+-- smaller screen coordinates.
+--
+-- We add a constant to z so nothing is at z=0 (division by zero!)
+-- This "pushes" the whole scene away from the camera.
+
+local WIDTH, HEIGHT = 32, 32
+local fb = {}
+local last_frame = -1
+
+local S = 0.5
+local vertices = {
+  {x= S,y= S,z= S}, {x=-S,y= S,z= S}, {x=-S,y=-S,z= S}, {x= S,y=-S,z= S},
+  {x= S,y= S,z=-S}, {x=-S,y= S,z=-S}, {x=-S,y=-S,z=-S}, {x= S,y=-S,z=-S},
+}
+
+local CAMERA_DIST = 2.5  -- how far the camera is from origin
+local SCALE = 28         -- how big things appear
+
+local function rotate_y(p, angle)
+  local c, s = math.cos(angle), math.sin(angle)
+  return { x = p.x*c - p.z*s, y = p.y, z = p.x*s + p.z*c }
+end
+
+-- THE PERSPECTIVE FORMULA!
+local function project(p)
+  local z = p.z + CAMERA_DIST  -- push away from camera
+  if z < 0.1 then z = 0.1 end  -- prevent division by tiny numbers
+  return {
+    x = 15.5 + (p.x / z) * SCALE,  -- divide by z!
+    y = 15.5 - (p.y / z) * SCALE   -- divide by z!
+  }
+end
+
+local function set_pixel(px, py, val)
+  px, py = math.floor(px + 0.5), math.floor(py + 0.5)
+  if px >= 0 and px < WIDTH and py >= 0 and py < HEIGHT then
+    fb[py * WIDTH + px] = val
+  end
+end
+
+function shader(x, y, t, frame, dt)
+  if frame ~= last_frame then
+    last_frame = frame
+    for i = 0, WIDTH * HEIGHT - 1 do fb[i] = 10 end
+
+    for i, v in ipairs(vertices) do
+      local rotated = rotate_y(v, t)
+      local p = project(rotated)  -- perspective projection!
+      set_pixel(p.x, p.y, 255)
+      set_pixel(p.x + 1, p.y, 255)
+    end
+  end
+
+  return 0, fb[y * WIDTH + x] or 0, 0
+end
+
+-- Notice how the back vertices are smaller than front ones!
+-- EXERCISE: Change CAMERA_DIST to 1.5 (more dramatic) or 5.0 (flatter)`,
+                },
+
+                cube_06_edges: {
+                    name: "3D Cube 6: Connecting Edges",
+                    code: `-- 3D CUBE TUTORIAL 6: Drawing Edges
+--
+-- A wireframe needs EDGES - lines connecting vertices.
+-- We define edges as pairs of vertex indices.
+--
+-- A cube has 12 edges:
+-- - 4 edges on the front face
+-- - 4 edges on the back face
+-- - 4 edges connecting front to back
+
+local WIDTH, HEIGHT = 32, 32
+local fb = {}
+local last_frame = -1
+
+local S = 0.5
+local vertices = {
+  {x= S,y= S,z= S}, {x=-S,y= S,z= S}, {x=-S,y=-S,z= S}, {x= S,y=-S,z= S},
+  {x= S,y= S,z=-S}, {x=-S,y= S,z=-S}, {x=-S,y=-S,z=-S}, {x= S,y=-S,z=-S},
+}
+
+-- Edges: pairs of vertex indices
+local edges = {
+  {1,2}, {2,3}, {3,4}, {4,1},  -- front face
+  {5,6}, {6,7}, {7,8}, {8,5},  -- back face
+  {1,5}, {2,6}, {3,7}, {4,8},  -- connecting edges
+}
+
+local CAMERA_DIST, SCALE = 2.5, 28
+
+local function rotate_y(p, a)
+  local c,s = math.cos(a), math.sin(a)
+  return { x=p.x*c-p.z*s, y=p.y, z=p.x*s+p.z*c }
+end
+
+local function project(p)
+  local z = p.z + CAMERA_DIST
+  if z < 0.1 then z = 0.1 end
+  return { x = 15.5 + p.x/z*SCALE, y = 15.5 - p.y/z*SCALE }
+end
+
+local function draw_line(x0,y0,x1,y1)
+  x0,y0 = math.floor(x0+0.5), math.floor(y0+0.5)
+  x1,y1 = math.floor(x1+0.5), math.floor(y1+0.5)
+  local dx,dy = math.abs(x1-x0), -math.abs(y1-y0)
+  local sx,sy = x0<x1 and 1 or -1, y0<y1 and 1 or -1
+  local err = dx + dy
+  while true do
+    if x0>=0 and x0<WIDTH and y0>=0 and y0<HEIGHT then
+      fb[y0*WIDTH+x0] = 255
+    end
+    if x0==x1 and y0==y1 then break end
+    local e2 = 2*err
+    if e2 >= dy then err=err+dy; x0=x0+sx end
+    if e2 <= dx then err=err+dx; y0=y0+sy end
+  end
+end
+
+local projected = {}
+
+function shader(x, y, t, frame, dt)
+  if frame ~= last_frame then
+    last_frame = frame
+    for i = 0, WIDTH*HEIGHT-1 do fb[i] = 10 end
+
+    -- Project all vertices
+    for i, v in ipairs(vertices) do
+      projected[i] = project(rotate_y(v, t))
+    end
+
+    -- Draw all edges
+    for _, e in ipairs(edges) do
+      local p1, p2 = projected[e[1]], projected[e[2]]
+      draw_line(p1.x, p1.y, p2.x, p2.y)
+    end
+  end
+
+  return 0, fb[y*WIDTH+x] or 0, 0
+end
+
+-- Now it's a wireframe cube!
+-- EXERCISE: Remove some edges to see what happens`,
+                },
+
+                cube_07_glow: {
+                    name: "3D Cube 7: Adding Glow",
+                    code: `-- 3D CUBE TUTORIAL 7: Glow Effect
+--
+-- Hard edges look harsh. We can add a "glow" by also lighting
+-- the pixels adjacent to each edge pixel.
+--
+-- KEY INSIGHT: Do this WHILE drawing the line, not after!
+-- For each pixel we draw, also set its 4 neighbors to a dimmer value.
+-- Use max() so brighter values aren't overwritten by dimmer glow.
+
+local WIDTH, HEIGHT = 32, 32
+local EDGE_BRIGHTNESS = 255
+local GLOW_BRIGHTNESS = 60
+local fb = {}
+local last_frame = -1
+
+local S = 0.5
+local vertices = {
+  {x= S,y= S,z= S}, {x=-S,y= S,z= S}, {x=-S,y=-S,z= S}, {x= S,y=-S,z= S},
+  {x= S,y= S,z=-S}, {x=-S,y= S,z=-S}, {x=-S,y=-S,z=-S}, {x= S,y=-S,z=-S},
+}
+local edges = {
+  {1,2}, {2,3}, {3,4}, {4,1},
+  {5,6}, {6,7}, {7,8}, {8,5},
+  {1,5}, {2,6}, {3,7}, {4,8},
+}
+
+local CAMERA_DIST, SCALE = 2.5, 28
+
+local function rotate_y(p, a)
+  local c,s = math.cos(a), math.sin(a)
+  return { x=p.x*c-p.z*s, y=p.y, z=p.x*s+p.z*c }
+end
+
+local function project(p)
+  local z = p.z + CAMERA_DIST
+  if z < 0.1 then z = 0.1 end
+  return { x = 15.5 + p.x/z*SCALE, y = 15.5 - p.y/z*SCALE }
+end
+
+-- Set pixel, keeping the brighter value
+local function set_pixel(px, py, val)
+  if px >= 0 and px < WIDTH and py >= 0 and py < HEIGHT then
+    local idx = py * WIDTH + px
+    if val > (fb[idx] or 0) then fb[idx] = val end
+  end
+end
+
+-- Draw line WITH glow
+local function draw_line(x0,y0,x1,y1)
+  x0,y0 = math.floor(x0+0.5), math.floor(y0+0.5)
+  x1,y1 = math.floor(x1+0.5), math.floor(y1+0.5)
+  local dx,dy = math.abs(x1-x0), -math.abs(y1-y0)
+  local sx,sy = x0<x1 and 1 or -1, y0<y1 and 1 or -1
+  local err = dx + dy
+  while true do
+    -- Core pixel
+    set_pixel(x0, y0, EDGE_BRIGHTNESS)
+    -- Glow: 4 neighbors
+    set_pixel(x0-1, y0, GLOW_BRIGHTNESS)
+    set_pixel(x0+1, y0, GLOW_BRIGHTNESS)
+    set_pixel(x0, y0-1, GLOW_BRIGHTNESS)
+    set_pixel(x0, y0+1, GLOW_BRIGHTNESS)
+
+    if x0==x1 and y0==y1 then break end
+    local e2 = 2*err
+    if e2 >= dy then err=err+dy; x0=x0+sx end
+    if e2 <= dx then err=err+dx; y0=y0+sy end
+  end
+end
+
+local projected = {}
+
+function shader(x, y, t, frame, dt)
+  if frame ~= last_frame then
+    last_frame = frame
+    for i = 0, WIDTH*HEIGHT-1 do fb[i] = 0 end
+    for i, v in ipairs(vertices) do
+      projected[i] = project(rotate_y(v, t))
+    end
+    for _, e in ipairs(edges) do
+      local p1, p2 = projected[e[1]], projected[e[2]]
+      draw_line(p1.x, p1.y, p2.x, p2.y)
+    end
+  end
+
+  local val = fb[y*WIDTH+x] or 0
+  return val*0.3, val, val*0.3  -- green tint
+end
+
+-- EXERCISE: Try GLOW_BRIGHTNESS = 120 for stronger glow`,
+                },
+
+                cube_08_final: {
+                    name: "3D Cube 8: Final Version",
+                    code: `-- 3D CUBE TUTORIAL 8: Putting It All Together
+--
+-- This is the complete, polished version with:
+-- - Rotation around TWO axes (Y and X)
+-- - All constants at the top for easy tweaking
+-- - Clean, organized code structure
+--
+-- You now understand every line of this code!
+
+-- CONSTANTS - tweak these!
+local WIDTH, HEIGHT = 32, 32
+local CENTER_X, CENTER_Y = 15.5, 15.5
+local SCALE = 28
+local CAMERA_DIST = 2.5
+local ROTATION_SPEED_Y = 1.5
+local ROTATION_SPEED_X = 0.7
+local CUBE_SIZE = 0.5
+local EDGE_BRIGHTNESS = 255
+local GLOW_BRIGHTNESS = 60
+local BG_R, BG_G, BG_B = 8, 8, 16
+
+-- Geometry
+local S = CUBE_SIZE
+local vertices = {
+  {x= S,y= S,z= S}, {x=-S,y= S,z= S}, {x=-S,y=-S,z= S}, {x= S,y=-S,z= S},
+  {x= S,y= S,z=-S}, {x=-S,y= S,z=-S}, {x=-S,y=-S,z=-S}, {x= S,y=-S,z=-S},
+}
+local edges = {
+  {1,2}, {2,3}, {3,4}, {4,1},
+  {5,6}, {6,7}, {7,8}, {8,5},
+  {1,5}, {2,6}, {3,7}, {4,8},
+}
+
+-- State
+local fb, projected = {}, {}
+local last_frame = -1
+
+-- Rotation functions
+local function rotate_y(p, a)
+  local c,s = math.cos(a), math.sin(a)
+  return { x=p.x*c-p.z*s, y=p.y, z=p.x*s+p.z*c }
+end
+local function rotate_x(p, a)
+  local c,s = math.cos(a), math.sin(a)
+  return { x=p.x, y=p.y*c-p.z*s, z=p.y*s+p.z*c }
+end
+
+-- Perspective projection
+local function project(p)
+  local z = p.z + CAMERA_DIST
+  if z < 0.1 then z = 0.1 end
+  return { x = CENTER_X + p.x/z*SCALE, y = CENTER_Y - p.y/z*SCALE }
+end
+
+-- Pixel setting with max brightness
+local function set_pixel(px, py, val)
+  if px >= 0 and px < WIDTH and py >= 0 and py < HEIGHT then
+    local idx = py * WIDTH + px
+    if val > (fb[idx] or 0) then fb[idx] = val end
+  end
+end
+
+-- Bresenham line with glow
+local function draw_line(x0,y0,x1,y1)
+  x0,y0 = math.floor(x0+0.5), math.floor(y0+0.5)
+  x1,y1 = math.floor(x1+0.5), math.floor(y1+0.5)
+  local dx,dy = math.abs(x1-x0), -math.abs(y1-y0)
+  local sx,sy = x0<x1 and 1 or -1, y0<y1 and 1 or -1
+  local err = dx + dy
+  while true do
+    set_pixel(x0, y0, EDGE_BRIGHTNESS)
+    set_pixel(x0-1, y0, GLOW_BRIGHTNESS)
+    set_pixel(x0+1, y0, GLOW_BRIGHTNESS)
+    set_pixel(x0, y0-1, GLOW_BRIGHTNESS)
+    set_pixel(x0, y0+1, GLOW_BRIGHTNESS)
+    if x0==x1 and y0==y1 then break end
+    local e2 = 2*err
+    if e2 >= dy then err=err+dy; x0=x0+sx end
+    if e2 <= dx then err=err+dx; y0=y0+sy end
+  end
+end
+
+function shader(x, y, t, frame, dt)
+  if frame ~= last_frame then
+    last_frame = frame
+    for i = 0, WIDTH*HEIGHT-1 do fb[i] = 0 end
+
+    local ay = t * ROTATION_SPEED_Y
+    local ax = t * ROTATION_SPEED_X
+    for i, v in ipairs(vertices) do
+      local r = rotate_x(rotate_y(v, ay), ax)
+      projected[i] = project(r)
+    end
+    for _, e in ipairs(edges) do
+      draw_line(projected[e[1]].x, projected[e[1]].y,
+                projected[e[2]].x, projected[e[2]].y)
+    end
+  end
+
+  local val = fb[y*WIDTH+x] or 0
+  if val > 0 then return val*0.3, val, val*0.3 end
+  return BG_R, BG_G, BG_B
+end
+
+-- Congratulations! You understand 3D graphics!
+-- Try: ROTATION_SPEED_Y = 0 to see only X rotation
+-- Try: CAMERA_DIST = 1.2 for extreme perspective`,
+                },
+
+                // === REGULAR SHADERS ===
+                plasma: {
+                    name: "Rainbow Plasma",
+                    code: `-- Rainbow plasma shader
+-- Classic demoscene plasma effect using overlapping sine waves
+
+-- Tunable parameters
+local FREQ_X = 0.3       -- Horizontal wave frequency (higher = tighter waves)
+local FREQ_Y = 0.3       -- Vertical wave frequency
+local FREQ_DIAG = 0.2    -- Diagonal wave frequency
+
+local SPEED_X = 1.0      -- Horizontal wave speed
+local SPEED_Y = 0.7      -- Vertical wave speed
+local SPEED_DIAG = 0.5   -- Diagonal wave speed
+
+local SATURATION = 1.0   -- Color intensity (0-1)
+local BRIGHTNESS = 1.0   -- Overall brightness (0-1)
+
+function shader(x, y, t, frame, dt)
+  -- Combine three sine waves to create interference pattern:
+  -- 1. Horizontal waves moving right
+  -- 2. Vertical waves moving down (different speed)
+  -- 3. Diagonal waves (x+y creates 45-degree angle)
+  local v = math.sin(x * FREQ_X + t * SPEED_X)
+          + math.sin(y * FREQ_Y + t * SPEED_Y)
+          + math.sin((x + y) * FREQ_DIAG + t * SPEED_DIAG)
+
+  -- Normalize to -1 to 1 range
+  v = v / 3
+
+  -- Convert to RGB using phase-shifted sine waves
+  -- 2.094 = 2*pi/3 (120 degrees) for green
+  -- 4.188 = 4*pi/3 (240 degrees) for blue
+  local r = math.sin(v * math.pi * 2) * 127 * SATURATION + 128 * BRIGHTNESS
+  local g = math.sin(v * math.pi * 2 + 2.094) * 127 * SATURATION + 128 * BRIGHTNESS
+  local b = math.sin(v * math.pi * 2 + 4.188) * 127 * SATURATION + 128 * BRIGHTNESS
+
+  return r, g, b
+end`,
+                },
+                checkerboard: {
+                    name: "Checkerboard",
+                    code: `-- Animated checkerboard
+function shader(x, y, t, frame, dt)
+  local size = 4
+  local offset = math.floor(t * 8)
+  local cx = math.floor((x + offset) / size)
+  local cy = math.floor((y + offset) / size)
+  local check = (cx + cy) % 2
+
+  local hue = (t * 0.5 + (x + y) / 64) % 1
+  local r, g, b = hsv(hue, 1, check == 1 and 1 or 0.2)
+  return r * 255, g * 255, b * 255
+end
+
+function hsv(h, s, v)
+  local i = math.floor(h * 6)
+  local f = h * 6 - i
+  local p = v * (1 - s)
+  local q = v * (1 - f * s)
+  local t = v * (1 - (1 - f) * s)
+  local r, g, b
+  local m = i % 6
+  if m == 0 then r, g, b = v, t, p
+  elseif m == 1 then r, g, b = q, v, p
+  elseif m == 2 then r, g, b = p, v, t
+  elseif m == 3 then r, g, b = p, q, v
+  elseif m == 4 then r, g, b = t, p, v
+  else r, g, b = v, p, q end
+  return r, g, b
+end`,
+                },
+                circles: {
+                    name: "Concentric Circles",
+                    code: `-- Concentric circles
+function shader(x, y, t, frame, dt)
+  local cx, cy = 15.5, 15.5
+  local dx, dy = x - cx, y - cy
+  local dist = math.sqrt(dx * dx + dy * dy)
+
+  local wave = math.sin(dist * 0.8 - t * 4) * 0.5 + 0.5
+  local hue = (dist / 20 + t * 0.2) % 1
+
+  local r = math.sin(hue * math.pi * 2) * wave * 127 + 128
+  local g = math.sin(hue * math.pi * 2 + 2.094) * wave * 127 + 128
+  local b = math.sin(hue * math.pi * 2 + 4.188) * wave * 127 + 128
+
+  return r, g, b
+end`,
+                },
+                gradient: {
+                    name: "Gradient Wave",
+                    code: `-- Gradient wave
+function shader(x, y, t, frame, dt)
+  local wave = math.sin(x * 0.2 + t * 2) * 0.5 + 0.5
+  local gradient = y / 31
+  local v = (wave + gradient) / 2
+
+  return v * 255, v * 100 + 50, (1 - v) * 200 + 55
+end`,
+                },
+                fire: {
+                    name: "Fire",
+                    code: `-- Simple fire effect
+function shader(x, y, t, frame, dt)
+  local noise = math.sin(x * 0.5 + t * 3) * math.sin(y * 0.3 + t * 2)
+  local heat = (1 - y / 31) + noise * 0.3
+  heat = math.max(0, math.min(1, heat))
+
+  local r = math.min(255, heat * 400)
+  local g = math.min(255, math.max(0, heat - 0.4) * 400)
+  local b = math.min(255, math.max(0, heat - 0.7) * 300)
+
+  return r, g, b
+end`,
+                },
+                sparkle: {
+                    name: "Sparkle",
+                    code: `-- Random sparkle
+function shader(x, y, t, frame, dt)
+  local seed = x * 31 + y + frame
+  local n = math.sin(seed * 12.9898 + seed * 78.233) * 43758.5453
+  n = n - math.floor(n)
+
+  if n > 0.97 then
+    return 255, 255, 255
+  else
+    local dim = n * 0.1
+    return dim * 100, dim * 50, dim * 150
+  end
+end`,
+                },
+                matrix: {
+                    name: "Matrix Rain",
+                    code: `-- Matrix digital rain
+function shader(x, y, t, frame, dt)
+  local speed = 8
+  local col_offset = math.sin(x * 0.5) * 10
+  local fall = (t * speed + col_offset + x * 3.7) % 40
+  local dist = (y - fall)
+
+  if dist > 0 and dist < 12 then
+    local brightness = 1 - dist / 12
+    local flicker = 0.8 + math.sin(x * 50 + t * 20) * 0.2
+    local g = brightness * flicker * 255
+    return g * 0.2, g, g * 0.2
+  end
+  return 0, 15, 0
+end`,
+                },
+                ocean: {
+                    name: "Ocean Waves",
+                    code: `-- Ocean waves
+function shader(x, y, t, frame, dt)
+  local wave1 = math.sin(x * 0.3 + t * 2) * 3
+  local wave2 = math.sin(x * 0.5 - t * 1.5) * 2
+  local wave3 = math.sin(x * 0.2 + t) * 4
+  local surface = 16 + wave1 + wave2 + wave3
+
+  local depth = y - surface
+  if depth < 0 then
+    -- Sky
+    return 30, 30, 50
+  else
+    -- Water with depth falloff
+    local d = math.min(depth / 16, 1)
+    local shimmer = math.sin(x * 2 + y + t * 5) * 0.1 + 0.9
+    local r = (1 - d) * 100 * shimmer
+    local g = (1 - d * 0.5) * 150 * shimmer
+    local b = 200 + (1 - d) * 55
+    return r, g, b
+  end
+end`,
+                },
+                lava: {
+                    name: "Lava Lamp",
+                    code: `-- Lava lamp blobs
+function shader(x, y, t, frame, dt)
+  local cx, cy = 15.5, 15.5
+  local v = 0
+
+  -- Multiple moving blobs
+  for i = 1, 4 do
+    local bx = cx + math.sin(t * 0.5 + i * 1.5) * 10
+    local by = cy + math.cos(t * 0.3 + i * 2) * 12
+    local dx, dy = x - bx, y - by
+    local d = math.sqrt(dx*dx + dy*dy)
+    v = v + 5 / (d + 1)
+  end
+
+  -- Threshold for blob edges
+  local edge = math.sin(v * 2) * 0.5 + 0.5
+  local r = edge * 255
+  local g = edge * edge * 100
+  local b = edge * edge * edge * 50
+  return r, g, b
+end`,
+                },
+                tunnel: {
+                    name: "Tunnel",
+                    code: `-- Infinite tunnel
+function shader(x, y, t, frame, dt)
+  local cx, cy = 15.5, 15.5
+  local dx, dy = x - cx, y - cy
+  local dist = math.sqrt(dx*dx + dy*dy)
+  local angle = math.atan(dy, dx)
+
+  -- Tunnel coordinates
+  local u = angle / math.pi
+  local v = 1 / (dist + 0.1) + t * 0.5
+
+  -- Checkerboard pattern
+  local check = (math.floor(u * 8) + math.floor(v * 8)) % 2
+  local shade = check * 0.7 + 0.3
+
+  -- Distance fog
+  local fog = math.min(dist / 20, 1)
+  shade = shade * (1 - fog * 0.7)
+
+  -- Purple/blue colors
+  return shade * 150, shade * 100, shade * 255
+end`,
+                },
+                heartbeat: {
+                    name: "Heartbeat",
+                    code: `-- Pulsing heart
+function shader(x, y, t, frame, dt)
+  local cx, cy = 15.5, 17
+  local nx = (x - cx) / 10
+  local ny = (y - cy) / 10
+
+  -- Heart shape equation
+  local heart = (nx*nx + ny*ny - 1)^3 - nx*nx * ny*ny*ny
+
+  -- Pulse effect
+  local pulse = math.sin(t * 6) * 0.3 + 1
+  heart = heart * pulse
+
+  if heart < 0 then
+    local glow = -heart * 2
+    glow = math.min(glow, 1)
+    return 255 * glow, 50 * glow, 80 * glow
+  else
+    return 20, 5, 10
+  end
+end`,
+                },
+                stars: {
+                    name: "Starfield",
+                    code: `-- 3D starfield
+function shader(x, y, t, frame, dt)
+  local cx, cy = 15.5, 15.5
+  local r, g, b = 0, 0, 5
+
+  -- Multiple star layers
+  for layer = 1, 3 do
+    local speed = layer * 0.5
+    local scale = 4 - layer
+
+    for i = 1, 8 do
+      local seed = i + layer * 10
+      local sx = (math.sin(seed * 127.1) * 0.5 + 0.5) * 32
+      local sy = (math.sin(seed * 311.7) * 0.5 + 0.5) * 32
+      local sz = ((t * speed + seed) % 1)
+
+      -- Project star
+      local px = cx + (sx - cx) / (sz + 0.1)
+      local py = cy + (sy - cy) / (sz + 0.1)
+
+      local dx, dy = x - px, y - py
+      local d = dx*dx + dy*dy
+
+      if d < scale then
+        local bright = (1 - sz) * (1 - d/scale)
+        r = r + bright * 255
+        g = g + bright * 255
+        b = b + bright * 255
+      end
+    end
+  end
+
+  return math.min(r, 255), math.min(g, 255), math.min(b, 255)
+end`,
+                },
+                spiral: {
+                    name: "Spiral",
+                    code: `-- Rotating spiral
+function shader(x, y, t, frame, dt)
+  local cx, cy = 15.5, 15.5
+  local dx, dy = x - cx, y - cy
+  local dist = math.sqrt(dx*dx + dy*dy)
+  local angle = math.atan(dy, dx)
+
+  -- Spiral pattern
+  local spiral = math.sin(angle * 3 + dist * 0.5 - t * 3)
+  spiral = spiral * 0.5 + 0.5
+
+  -- Color based on angle
+  local hue = (angle / math.pi / 2 + 0.5 + t * 0.1) % 1
+  local h = hue * 6
+  local hi = math.floor(h) % 6
+  local f = h - math.floor(h)
+
+  local r, g, b
+  if hi == 0 then r, g, b = 1, f, 0
+  elseif hi == 1 then r, g, b = 1-f, 1, 0
+  elseif hi == 2 then r, g, b = 0, 1, f
+  elseif hi == 3 then r, g, b = 0, 1-f, 1
+  elseif hi == 4 then r, g, b = f, 0, 1
+  else r, g, b = 1, 0, 1-f end
+
+  local v = spiral * (1 - dist/25)
+  return r * v * 255, g * v * 255, b * v * 255
+end`,
+                },
+                warp: {
+                    name: "Sinusoidal Warp",
+                    code: `-- Sinusoidal Warp with Lighting
+local SPEED = 0.5
+local SCALE = 0.15
+
+function shader(x, y, t, frame, dt)
+  local px = (x - 15.5) * SCALE
+  local py = (y - 15.5) * SCALE
+  local time = t * SPEED
+
+  -- Simple warp
+  local wx = px + math.sin(py * 3 + time) * 0.3
+  local wy = py + math.sin(px * 3 + time * 1.3) * 0.3
+  wx = wx + math.sin(wy * 2 + time * 0.7) * 0.2
+  wy = wy + math.sin(wx * 2 + time * 0.9) * 0.2
+
+  -- Animated light
+  local lx = math.cos(t) * 0.3
+  local ly = math.sin(t * 0.7) * 0.3
+
+  -- Fake normal from warp
+  local nx = math.cos(py * 3 + time) * 0.3
+  local ny = math.cos(px * 3 + time * 1.3) * 0.3
+
+  -- Diffuse lighting
+  local diff = (nx * (lx - px) + ny * (ly - py)) * 2 + 0.5
+  diff = math.max(diff, 0.1)
+
+  -- Color from warp
+  local hue = (wx + wy + t * 0.1) % 1
+  if hue < 0 then hue = hue + 1 end
+
+  local h = hue * 6
+  local hi = math.floor(h) % 6
+  local f = h - math.floor(h)
+
+  local r, g, b
+  if hi == 0 then r, g, b = 1, f, 0
+  elseif hi == 1 then r, g, b = 1-f, 1, 0
+  elseif hi == 2 then r, g, b = 0, 1, f
+  elseif hi == 3 then r, g, b = 0, 1-f, 1
+  elseif hi == 4 then r, g, b = f, 0, 1
+  else r, g, b = 1, 0, 1-f end
+
+  return math.min(r * diff * 255, 255),
+         math.min(g * diff * 255, 255),
+         math.min(b * diff * 255, 255)
+end`,
+                },
+                cube3d: {
+                    name: "3D Cube (Tsoding)",
+                    code: `-- 3D Wireframe Cube
+-- Based on Tsoding's "One Formula That Demystifies 3D Graphics"
+-- https://github.com/tsoding/formula
+--
+-- HOW IT WORKS:
+-- 1. Define cube as 8 vertices in 3D space and 12 edges connecting them
+-- 2. Each frame: rotate vertices, project 3D->2D using x/z and y/z
+-- 3. Draw lines to a framebuffer using Bresenham's algorithm
+-- 4. While drawing, also mark adjacent pixels as "glow" (dimmer)
+-- 5. Shader just reads brightness from framebuffer - no per-pixel math!
+--
+-- This is fast because expensive work (rotation, projection, line drawing)
+-- happens once per frame, not 1024 times per pixel.
+
+-- CONSTANTS
+local WIDTH = 32                -- display width in pixels
+local HEIGHT = 32               -- display height in pixels
+local CENTER_X = 15.5           -- screen center x
+local CENTER_Y = 15.5           -- screen center y
+local SCALE = 28                -- projection scale (larger = bigger cube)
+local CAMERA_DIST = 2.5         -- distance from camera to cube center
+local ROTATION_SPEED_Y = 1.5    -- rotation speed around Y axis
+local ROTATION_SPEED_X = 0.7    -- rotation speed around X axis
+local CUBE_SIZE = 0.5           -- half-size of cube (vertices at +/- this)
+local EDGE_BRIGHTNESS = 255     -- brightness of edge pixels
+local GLOW_BRIGHTNESS = 60      -- brightness of glow pixels
+local BG_R, BG_G, BG_B = 8, 8, 16  -- background color
+
+-- Cube vertices (8 corners at +/- CUBE_SIZE)
+local S = CUBE_SIZE
+local vertices = {
+  {x =  S, y =  S, z =  S},
+  {x = -S, y =  S, z =  S},
+  {x = -S, y = -S, z =  S},
+  {x =  S, y = -S, z =  S},
+  {x =  S, y =  S, z = -S},
+  {x = -S, y =  S, z = -S},
+  {x = -S, y = -S, z = -S},
+  {x =  S, y = -S, z = -S},
+}
+
+-- Edges: pairs of vertex indices to connect
+local edges = {
+  {1,2}, {2,3}, {3,4}, {4,1},  -- front face
+  {5,6}, {6,7}, {7,8}, {8,5},  -- back face
+  {1,5}, {2,6}, {3,7}, {4,8},  -- connecting edges
+}
+
+-- ROTATION: Multiply point by rotation matrix
+-- Rotate point around Y axis (left/right spin)
+local function rotate_y(p, angle)
+  local c, s = math.cos(angle), math.sin(angle)
+  return {
+    x = p.x * c - p.z * s,
+    y = p.y,
+    z = p.x * s + p.z * c
+  }
+end
+
+-- Rotate point around X axis (up/down tilt)
+local function rotate_x(p, angle)
+  local c, s = math.cos(angle), math.sin(angle)
+  return {
+    x = p.x,
+    y = p.y * c - p.z * s,
+    z = p.y * s + p.z * c
+  }
+end
+
+-- PROJECTION: The magic formula! Divide x and y by z.
+-- Things further away (larger z) appear smaller.
+-- CAMERA_DIST pushes the cube away from camera so z is always positive.
+local function project(p)
+  local z = p.z + CAMERA_DIST
+  if z < 0.1 then z = 0.1 end
+  return {
+    x = p.x / z,
+    y = p.y / z
+  }
+end
+
+-- FRAMEBUFFER: Store brightness values for each pixel (0-255)
+-- This lets us "draw" once per frame, then just read values per pixel
+local projected = {}  -- 2D screen positions of vertices
+local fb = {}         -- brightness buffer: fb[y*32+x] = 0-255
+local last_frame = -1
+
+-- Set pixel if brighter than current (handles overlapping lines)
+local function set_pixel(px, py, val)
+  if px >= 0 and px < WIDTH and py >= 0 and py < HEIGHT then
+    local idx = py * WIDTH + px
+    if val > (fb[idx] or 0) then fb[idx] = val end
+  end
+end
+
+-- BRESENHAM'S LINE ALGORITHM
+--
+-- Problem: Draw a line between two points using only integer pixels.
+-- A true line is continuous, but pixels are discrete - we must choose
+-- which pixels best approximate the line.
+--
+-- Key insight: Track an "error" value that measures how far we've
+-- drifted from the true line. When error gets too large, step in
+-- the secondary direction to compensate.
+--
+-- For a line going mostly horizontal (dx > dy):
+--   - Always step in x
+--   - Accumulate error based on slope (dy/dx)
+--   - When error exceeds 0.5, also step in y and reset error
+--
+-- Bresenham's trick: Use integer math by doubling everything,
+-- so we compare 2*err against dx and dy instead of fractions.
+--
+local function draw_line(x0, y0, x1, y1)
+  x0 = math.floor(x0 + 0.5)
+  y0 = math.floor(y0 + 0.5)
+  x1 = math.floor(x1 + 0.5)
+  y1 = math.floor(y1 + 0.5)
+
+  local dx = math.abs(x1 - x0)        -- horizontal distance
+  local dy = -math.abs(y1 - y0)       -- vertical distance (negative for math)
+  local sx = x0 < x1 and 1 or -1      -- x step direction
+  local sy = y0 < y1 and 1 or -1      -- y step direction
+  local err = dx + dy                 -- initial error term
+
+  while true do
+    -- Draw core pixel and glow neighbors
+    set_pixel(x0, y0, EDGE_BRIGHTNESS)
+    set_pixel(x0 - 1, y0, GLOW_BRIGHTNESS)
+    set_pixel(x0 + 1, y0, GLOW_BRIGHTNESS)
+    set_pixel(x0, y0 - 1, GLOW_BRIGHTNESS)
+    set_pixel(x0, y0 + 1, GLOW_BRIGHTNESS)
+
+    if x0 == x1 and y0 == y1 then break end
+
+    local e2 = 2 * err
+    -- If error says we should step in x, do it
+    if e2 >= dy then err = err + dy; x0 = x0 + sx end
+    -- If error says we should step in y, do it
+    if e2 <= dx then err = err + dx; y0 = y0 + sy end
+  end
+end
+
+-- Update projected vertices
+local function update_vertices(t)
+  local angle_y = t * ROTATION_SPEED_Y
+  local angle_x = t * ROTATION_SPEED_X
+  for i, v in ipairs(vertices) do
+    local rotated = rotate_y(v, angle_y)
+    rotated = rotate_x(rotated, angle_x)
+    local p = project(rotated)
+    projected[i] = {
+      x = CENTER_X + p.x * SCALE,
+      y = CENTER_Y - p.y * SCALE
+    }
+  end
+end
+
+-- Draw all edges to framebuffer
+local function draw_edges()
+  for _, edge in ipairs(edges) do
+    local p1, p2 = projected[edge[1]], projected[edge[2]]
+    draw_line(p1.x, p1.y, p2.x, p2.y)
+  end
+end
+
+-- Clear framebuffer
+local function clear_fb()
+  for i = 0, WIDTH * HEIGHT - 1 do fb[i] = 0 end
+end
+
+function shader(x, y, t, frame, dt)
+  -- Once per frame: transform geometry and rasterize to framebuffer
+  if frame ~= last_frame then
+    last_frame = frame
+    clear_fb()
+    update_vertices(t)
+    draw_edges()
+  end
+
+  -- Per pixel: just read pre-computed brightness from framebuffer
+  -- This is O(1) - no loops, no distance checks!
+  local val = fb[y * WIDTH + x] or 0
+  if val > 0 then
+    return val * 0.3, val, val * 0.3  -- green, brightness from fb
+  end
+
+  return BG_R, BG_G, BG_B
+end`,
+                },
+            };
+
+            const STORAGE_KEY = "unicorn_shaders";
+            const TARGET_HOST = "http://cosmic.lan";
+            let apiBase = "";  // Empty = relative URLs (same origin) pop
+
+            function getCustomShaders() {
+                try {
+                    return JSON.parse(
+                        localStorage.getItem(STORAGE_KEY) || "{}",
+                    );
+                } catch {
+                    return {};
+                }
+            }
+
+            function saveCustomShaders(shaders) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(shaders));
+            }
+
+            function populateShaderList() {
+                const select = document.getElementById("shaderSelect");
+                const currentValue = select.value;
+                select.innerHTML = "";
+
+                // Separate tutorials from regular shaders
+                const tutorials = [];
+                const regular = [];
+                for (const [id, shader] of Object.entries(BUILTIN_SHADERS)) {
+                    if (id.startsWith("tut_")) {
+                        tutorials.push([id, shader]);
+                    } else {
+                        regular.push([id, shader]);
+                    }
+                }
+
+                // Tutorials group
+                if (tutorials.length > 0) {
+                    const tutorialGroup = document.createElement("optgroup");
+                    tutorialGroup.label = "Tutorials";
+                    for (const [id, shader] of tutorials) {
+                        const opt = document.createElement("option");
+                        opt.value = id;
+                        opt.textContent = shader.name;
+                        tutorialGroup.appendChild(opt);
+                    }
+                    select.appendChild(tutorialGroup);
+                }
+
+                // Regular built-in shaders
+                const builtinGroup = document.createElement("optgroup");
+                builtinGroup.label = "Built-in";
+                for (const [id, shader] of regular) {
+                    const opt = document.createElement("option");
+                    opt.value = id;
+                    opt.textContent = shader.name;
+                    builtinGroup.appendChild(opt);
+                }
+                select.appendChild(builtinGroup);
+
+                const custom = getCustomShaders();
+                if (Object.keys(custom).length > 0) {
+                    const customGroup = document.createElement("optgroup");
+                    customGroup.label = "Custom";
+                    for (const [id, shader] of Object.entries(custom)) {
+                        const opt = document.createElement("option");
+                        opt.value = "custom:" + id;
+                        opt.textContent = shader.name + " *";
+                        customGroup.appendChild(opt);
+                    }
+                    select.appendChild(customGroup);
+                }
+
+                if (currentValue) {
+                    select.value = currentValue;
+                }
+                updateDeleteButton();
+            }
+
+            function loadShader() {
+                const select = document.getElementById("shaderSelect");
+                const value = select.value;
+                let code = "";
+
+                if (value.startsWith("custom:")) {
+                    const id = value.substring(7);
+                    const custom = getCustomShaders();
+                    if (custom[id]) {
+                        code = custom[id].code;
+                    }
+                } else if (BUILTIN_SHADERS[value]) {
+                    code = BUILTIN_SHADERS[value].code;
+                }
+
+                const textarea = document.getElementById("shader");
+                textarea.value = code;
+                // Trigger input event for Prism Live to update
+                textarea.dispatchEvent(new Event("input"));
+                updateDeleteButton();
+            }
+
+            function updateDeleteButton() {
+                const select = document.getElementById("shaderSelect");
+                const btn = document.getElementById("deleteBtn");
+                btn.disabled = !select.value.startsWith("custom:");
+            }
+
+            function saveShader() {
+                const select = document.getElementById("shaderSelect");
+                const value = select.value;
+                const code = document.getElementById("shader").value;
+
+                if (value.startsWith("custom:")) {
+                    const id = value.substring(7);
+                    const custom = getCustomShaders();
+                    custom[id].code = code;
+                    saveCustomShaders(custom);
+                    setStatus("Shader saved", "ok");
+                } else {
+                    setStatus(
+                        'Use "Save As" to save a copy of built-in shaders',
+                        "error",
+                    );
+                }
+            }
+
+            function saveAsNew() {
+                const nameInput = document.getElementById("newName");
+                let name = nameInput.value.trim();
+
+                if (!name) {
+                    setStatus("Enter a name for the shader", "error");
+                    return;
+                }
+
+                const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+
+                if (id in BUILTIN_SHADERS) {
+                    setStatus("Cannot use a built-in shader name", "error");
+                    return;
+                }
+
+                const code = document.getElementById("shader").value;
+                const custom = getCustomShaders();
+
+                custom[id] = { name: name, code: code };
+                saveCustomShaders(custom);
+
+                populateShaderList();
+                document.getElementById("shaderSelect").value = "custom:" + id;
+                nameInput.value = "";
+                updateDeleteButton();
+                setStatus('Shader saved as "' + name + '"', "ok");
+            }
+
+            function deleteShader() {
+                const select = document.getElementById("shaderSelect");
+                const value = select.value;
+
+                if (!value.startsWith("custom:")) {
+                    setStatus("Cannot delete built-in shaders", "error");
+                    return;
+                }
+
+                const id = value.substring(7);
+                const custom = getCustomShaders();
+                const name = custom[id]?.name || id;
+
+                if (!confirm('Delete shader "' + name + '"?')) {
+                    return;
+                }
+
+                delete custom[id];
+                saveCustomShaders(custom);
+
+                populateShaderList();
+                document.getElementById("shaderSelect").value = "plasma";
+                loadShader();
+                setStatus("Shader deleted", "ok");
+            }
+
+            function setStatus(text, type) {
+                const el = document.getElementById("status");
+                el.textContent = text;
+                el.className = "status " + (type || "");
+            }
+
+            async function deploy() {
+                const code = document.getElementById("shader").value;
+                setStatus("Deploying...", "");
+
+                try {
+                    const response = await fetch(apiBase + "/api/shader", {
+                        method: "POST",
+                        headers: { "Content-Type": "text/plain" },
+                        body: code,
+                    });
+                    const result = await response.json();
+
+                    if (result.status === "ok") {
+                        setStatus("Shader running on device", "ok");
+                    } else {
+                        setStatus(
+                            "Error: " + (result.message || "Unknown"),
+                            "error",
+                        );
+                    }
+                } catch (err) {
+                    setStatus("Failed: " + err.message, "error");
+                }
+            }
+
+            async function unload() {
+                setStatus("Stopping...", "");
+
+                try {
+                    const response = await fetch(apiBase + "/api/shader", {
+                        method: "DELETE",
+                    });
+                    const result = await response.json();
+                    setStatus(result.message || "Shader stopped", "");
+                } catch (err) {
+                    setStatus("Failed: " + err.message, "error");
+                }
+            }
+
+            async function checkTargetHost() {
+                try {
+                    const response = await fetch(TARGET_HOST + "/api/status", {
+                        method: "GET",
+                        signal: AbortSignal.timeout(3000),
+                    });
+                    const data = await response.json();
+                    if (data.status === "running") {
+                        apiBase = TARGET_HOST;
+                        setStatus("Connected to " + TARGET_HOST + " (v" + data.version + ")", "ok");
+                        return true;
+                    }
+                } catch (err) {
+                    // Host not reachable, use relative URLs
+                }
+                return false;
+            }
+
+            async function init() {
+                populateShaderList();
+                loadShader();
+                await checkTargetHost();
+            }
+
+            window.onload = init;
+        </script>
+    </body>
+</html>

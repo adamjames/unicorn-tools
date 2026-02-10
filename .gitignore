@@ -1,0 +1,43 @@
+# Build outputs
+result
+*.uf2
+*.elf
+*.bin
+*.o
+*.d
+*.a
+
+# Pico build
+firmware/cosmic/build/
+
+# 3DS build artifacts
+firmware/3ds/.tools/
+firmware/3ds/plugin/Build/
+firmware/3ds/plugin/*.3gx
+firmware/3ds/plugin/*.elf
+firmware/3ds/sysmodule/build/
+firmware/3ds/sysmodule/*.3dsx
+firmware/3ds/sysmodule/*.elf
+firmware/3ds/launcher/build/
+firmware/3ds/launcher/*.3dsx
+firmware/3ds/launcher/*.elf
+firmware/3ds/*.cxi
+
+# Editor/IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Old projects (consolidated)
+old-projects/

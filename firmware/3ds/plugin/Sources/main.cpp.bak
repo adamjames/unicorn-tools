@@ -1,0 +1,347 @@
+#include <3ds.h>
+#include <CTRPluginFramework.hpp>
+#include <vector>
+#include <string>
+#include <cstring>
+#include <cstdlib>
+#include <malloc.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+
+// Streaming configuration
+static char cfg_host[64] = "mitre.lan";
+static int cfg_port = 8080;
+static int cfg_fps = 20;
+static bool streaming_enabled = true;
+static Thread stream_thread = nullptr;
+static volatile bool thread_running = false;
+static u32 *socBuffer = nullptr;
+
+#define FRAME_WIDTH 32
+#define FRAME_HEIGHT 32
+#define FRAME_SIZE (FRAME_WIDTH * FRAME_HEIGHT * 3)
+
+namespace CTRPluginFramework
+{
+    // Read config from SD card
+    static void LoadConfig(void)
+    {
+        File file;
+        if (File::Open(file, "/3ds/cosmic_stream.cfg", File::READ) == 0)
+        {
+            char buf[256];
+            int bytesRead = file.Read(buf, sizeof(buf) - 1);
+            if (bytesRead > 0)
+            {
+                buf[bytesRead] = '\0';
+                char *line = strtok(buf, "\n");
+                while (line)
+                {
+                    while (*line == ' ') line++;
+                    if (*line != '#' && *line != '\0')
+                    {
+                        char *eq = strchr(line, '=');
+                        if (eq)
+                        {
+                            *eq = '\0';
+                            char *val = eq + 1;
+                            if (strcmp(line, "host") == 0)
+                                strncpy(cfg_host, val, sizeof(cfg_host) - 1);
+                            else if (strcmp(line, "port") == 0)
+                                cfg_port = atoi(val);
+                            else if (strcmp(line, "fps") == 0)
+                                cfg_fps = atoi(val);
+                        }
+                    }
+                    line = strtok(nullptr, "\n");
+                }
+            }
+            file.Close();
+        }
+    }
+
+    // Downsample framebuffer to 32x32
+    // Top screen is 400x240, rotated 90 degrees CCW in memory (BGR format)
+    static void DownsampleFrame(const u8 *src, int srcW, int srcH, u8 *dst)
+    {
+        int stepX = srcW / FRAME_WIDTH;
+        int stepY = srcH / FRAME_HEIGHT;
+
+        for (int y = 0; y < FRAME_HEIGHT; y++)
+        {
+            for (int x = 0; x < FRAME_WIDTH; x++)
+            {
+                int srcX = x * stepX;
+                int srcY = y * stepY;
+                // 3DS framebuffer is rotated 90 CCW, BGR format
+                // Physical layout: column-major, bottom-to-top within column
+                int srcIdx = (srcX * srcH + (srcH - 1 - srcY)) * 3;
+                int dstIdx = (y * FRAME_WIDTH + x) * 3;
+                dst[dstIdx + 0] = src[srcIdx + 2]; // R
+                dst[dstIdx + 1] = src[srcIdx + 1]; // G
+                dst[dstIdx + 2] = src[srcIdx + 0]; // B
+            }
+        }
+    }
+
+    // Send frame over HTTP - returns 0 on success, negative error code on failure
+    static int SendFrame(const u8 *frame)
+    {
+        struct sockaddr_in addr;
+        struct hostent *host;
+        int sock;
+        char request[512];
+
+        sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock < 0) return -1; // socket error
+
+        host = gethostbyname(cfg_host);
+        if (!host) { closesocket(sock); return -2; } // DNS error
+
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(cfg_port);
+        memcpy(&addr.sin_addr, host->h_addr, host->h_length);
+
+        if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0)
+        {
+            closesocket(sock);
+            return -3; // connect error
+        }
+
+        int reqlen = snprintf(request, sizeof(request),
+            "POST /api/frame HTTP/1.1\r\n"
+            "Host: %s:%d\r\n"
+            "Content-Type: application/octet-stream\r\n"
+            "Content-Length: %d\r\n"
+            "Connection: close\r\n"
+            "\r\n", cfg_host, cfg_port, FRAME_SIZE);
+
+        if (send(sock, request, reqlen, 0) < 0)
+        {
+            closesocket(sock);
+            return -4; // send header error
+        }
+        if (send(sock, (const char*)frame, FRAME_SIZE, 0) < 0)
+        {
+            closesocket(sock);
+            return -5; // send data error
+        }
+        closesocket(sock);
+        return 0;
+    }
+
+    // Background streaming thread
+    static void StreamThreadFunc(void *arg)
+    {
+        u8 frame[FRAME_SIZE];
+        u64 delay = 1000000000ULL / cfg_fps;
+
+        OSD::Notify("Stream: waiting for WiFi...");
+
+        // Initialize AC service first
+        Result acRes = acInit();
+        if (acRes != 0)
+        {
+            OSD::Notify("Stream: acInit failed: " + std::to_string(acRes), Color::Red);
+            thread_running = false;
+            return;
+        }
+
+        // Wait for WiFi
+        u32 wifiStatus = 0;
+        for (int i = 0; i < 100 && !wifiStatus; i++)
+        {
+            ACU_GetWifiStatus(&wifiStatus);
+            svcSleepThread(100000000ULL); // 100ms
+        }
+
+        acExit(); // Done checking WiFi
+
+        if (!wifiStatus)
+        {
+            OSD::Notify("Stream: No WiFi!", Color::Red);
+            thread_running = false;
+            return;
+        }
+
+        OSD::Notify("Stream: WiFi OK, init sockets...");
+
+        // Initialize sockets
+        socBuffer = (u32*)memalign(0x1000, 0x10000);
+        if (!socBuffer)
+        {
+            OSD::Notify("Stream: memalign failed!", Color::Red);
+            thread_running = false;
+            return;
+        }
+
+        Result socRes = socInit(socBuffer, 0x10000);
+        if (socRes != 0)
+        {
+            OSD::Notify("Stream: socInit failed: " + std::to_string(socRes), Color::Red);
+            thread_running = false;
+            free(socBuffer); socBuffer = nullptr;
+            return;
+        }
+
+        OSD::Notify("Stream: sockets OK, connecting to " + std::string(cfg_host));
+
+        int frameCount = 0;
+        int errorCount = 0;
+
+        while (thread_running && streaming_enabled)
+        {
+            // Use CTRPluginFramework's Screen class to get framebuffer
+            // This is safer and works within the plugin context
+            const Screen &topScreen = OSD::GetTopScreen();
+
+            // Get raw framebuffer pointer - top screen is 400x240
+            u8 *fb = (u8*)topScreen.LeftFramebuffer;
+            if (fb)
+            {
+                DownsampleFrame(fb, 400, 240, frame);
+                int result = SendFrame(frame);
+                if (result == 0)
+                {
+                    frameCount++;
+                    if (frameCount == 1 || frameCount % 100 == 0)
+                    {
+                        OSD::Notify("Stream: sent " + std::to_string(frameCount) + " frames");
+                    }
+                    errorCount = 0;
+                }
+                else
+                {
+                    errorCount++;
+                    if (errorCount == 1 || errorCount % 50 == 0)
+                    {
+                        // -1=socket, -2=DNS, -3=connect, -4=send hdr, -5=send data
+                        OSD::Notify("Stream: err " + std::to_string(result) + " #" + std::to_string(errorCount), Color::Orange);
+                    }
+                }
+            }
+            else if (frameCount == 0)
+            {
+                OSD::Notify("Stream: no framebuffer!", Color::Red);
+            }
+            svcSleepThread(delay);
+        }
+
+        socExit();
+        if (socBuffer) { free(socBuffer); socBuffer = nullptr; }
+        thread_running = false;
+    }
+
+    static void StartStreaming(void)
+    {
+        if (thread_running) return;
+
+        thread_running = true;
+        s32 prio = 0;
+        svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+        stream_thread = threadCreate(StreamThreadFunc, nullptr, 0x4000, prio + 1, -1, false);
+    }
+
+    static void StopStreaming(void)
+    {
+        if (!thread_running) return;
+
+        streaming_enabled = false;
+        thread_running = false;
+        if (stream_thread)
+        {
+            threadJoin(stream_thread, U64_MAX);
+            threadFree(stream_thread);
+            stream_thread = nullptr;
+        }
+        streaming_enabled = true;
+    }
+
+    // Menu callbacks
+    static void ToggleStreaming(MenuEntry *entry)
+    {
+        if (thread_running)
+        {
+            StopStreaming();
+            OSD::Notify("Streaming stopped");
+        }
+        else
+        {
+            StartStreaming();
+            OSD::Notify("Streaming started");
+        }
+    }
+
+    static void ShowConfig(MenuEntry *entry)
+    {
+        std::string msg = "Host: " + std::string(cfg_host) + "\n";
+        msg += "Port: " + std::to_string(cfg_port) + "\n";
+        msg += "FPS: " + std::to_string(cfg_fps);
+        MessageBox("Cosmic Stream Config", msg)();
+    }
+
+    void PatchProcess(FwkSettings &settings)
+    {
+        LoadConfig();
+    }
+
+    void OnProcessExit(void)
+    {
+        StopStreaming();
+    }
+
+    void InitMenu(PluginMenu &menu)
+    {
+        menu += new MenuEntry("Toggle Streaming", nullptr, ToggleStreaming,
+            "Start/stop streaming to Cosmic Unicorn");
+        menu += new MenuEntry("Show Config", nullptr, ShowConfig,
+            "Show current configuration");
+        menu += new MenuEntry("Auto-Start", nullptr, [](MenuEntry *entry)
+        {
+            StartStreaming();
+            OSD::Notify("Auto-streaming enabled");
+        }, "Start streaming automatically");
+    }
+
+    // OSD callback - runs every frame for reliable notifications
+    static bool g_showStartupMsg = true;
+    static int g_frameCount = 0;
+
+    static bool OnFrame(const Screen &screen)
+    {
+        g_frameCount++;
+
+        if (g_showStartupMsg && g_frameCount == 30) // Wait 30 frames for OSD to be ready
+        {
+            OSD::Notify("Cosmic Stream v1.0");
+            OSD::Notify("Host: " + std::string(cfg_host) + ":" + std::to_string(cfg_port));
+            g_showStartupMsg = false;
+
+            // Start streaming after OSD is ready
+            StartStreaming();
+        }
+
+        return true; // Continue callback
+    }
+
+    int main(void)
+    {
+        PluginMenu *menu = new PluginMenu("Cosmic Stream", 1, 0, 0,
+            "Stream 3DS screen to Cosmic Unicorn LED panel");
+
+        menu->SynchronizeWithFrame(true);
+        InitMenu(*menu);
+
+        // Register frame callback for reliable OSD
+        OSD::Run(OnFrame);
+
+        menu->Run();
+
+        StopStreaming();
+        delete menu;
+        return 0;
+    }
+}

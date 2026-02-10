@@ -1,0 +1,541 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Unicorn Shader Editor</title>
+        <link
+            rel="stylesheet"
+            href="https://prismjs.com/themes/prism-tomorrow.css"
+        />
+        <link rel="stylesheet" href="https://live.prismjs.com/prism-live.css" />
+        <style>
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    monospace;
+                background: #1a1a2e;
+                color: #eee;
+                min-height: 100vh;
+                padding: 20px;
+            }
+            .container {
+                max-width: 1000px;
+                margin: 0 auto;
+            }
+            h1 {
+                font-size: 1.5em;
+                color: #16c79a;
+                margin-bottom: 15px;
+            }
+            .panel {
+                background: #16213e;
+                border-radius: 8px;
+                padding: 15px;
+                margin-bottom: 15px;
+            }
+            label {
+                display: block;
+                font-size: 0.85em;
+                color: #888;
+                margin-bottom: 5px;
+            }
+            /* Code editor container */
+            .editor-container {
+                border: 1px solid #333;
+                border-radius: 4px;
+                overflow: hidden;
+            }
+            .editor-container:focus-within {
+                border-color: #16c79a;
+            }
+            /* Prism Live styling */
+            div.prism-live {
+                background: #2d2d2d;
+                min-height: 380px;
+                max-height: 500px;
+            }
+            textarea.prism-live,
+            pre.prism-live {
+                font-family:
+                    "Fira Code", "Consolas", "Monaco", monospace !important;
+                font-size: 13px !important;
+                line-height: 1.5 !important;
+                tab-size: 2 !important;
+                padding: 10px !important;
+            }
+            pre.prism-live {
+                background: #2d2d2d !important;
+                margin: 0 !important;
+            }
+            pre.prism-live code {
+                font-family: inherit !important;
+                font-size: inherit !important;
+            }
+
+            .controls {
+                display: flex;
+                gap: 10px;
+                margin-top: 15px;
+                flex-wrap: wrap;
+                align-items: center;
+            }
+            button {
+                background: #16c79a;
+                color: #1a1a2e;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            button:hover {
+                background: #1dd1a1;
+            }
+            button:disabled {
+                background: #444;
+                color: #888;
+                cursor: not-allowed;
+            }
+            button.stop {
+                background: #e74c3c;
+                color: white;
+            }
+            button.stop:hover {
+                background: #ff6b6b;
+            }
+            button.secondary {
+                background: #3d5a80;
+                color: white;
+            }
+            button.secondary:hover {
+                background: #4a6fa5;
+            }
+            .status {
+                font-size: 13px;
+                color: #888;
+                margin-left: auto;
+            }
+            .status.ok {
+                color: #16c79a;
+            }
+            .status.error {
+                color: #e74c3c;
+            }
+            select,
+            input[type="text"] {
+                background: #0f0f23;
+                color: #ccc;
+                border: 1px solid #333;
+                padding: 8px;
+                border-radius: 4px;
+                font-size: 14px;
+            }
+            select {
+                min-width: 200px;
+            }
+            input[type="text"] {
+                width: 200px;
+            }
+            .help {
+                font-size: 12px;
+                color: #666;
+                line-height: 1.6;
+                margin-top: 15px;
+            }
+            .help code {
+                background: #0f0f23;
+                padding: 1px 4px;
+                border-radius: 2px;
+                color: #ccccff;
+            }
+            .shader-row {
+                display: flex;
+                gap: 10px;
+                align-items: flex-end;
+                flex-wrap: wrap;
+            }
+            .shader-row > div {
+                flex: 1;
+                min-width: 150px;
+            }
+            .shader-actions {
+                display: flex;
+                gap: 5px;
+                flex: 0 !important;
+            }
+            .divider {
+                border-top: 1px solid #333;
+                margin: 10px 0;
+                padding-top: 10px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Unicorn Shader Editor</h1>
+
+            <div class="panel">
+                <div class="shader-row">
+                    <div>
+                        <label>Shader</label>
+                        <select
+                            id="shaderSelect"
+                            onchange="loadShader()"
+                        ></select>
+                    </div>
+                    <div class="shader-actions">
+                        <button class="secondary" onclick="saveShader()">
+                            Save
+                        </button>
+                        <button
+                            class="stop"
+                            onclick="deleteShader()"
+                            id="deleteBtn"
+                        >
+                            Delete
+                        </button>
+                    </div>
+                </div>
+                <div class="divider"></div>
+                <div class="shader-row">
+                    <div>
+                        <label>Save as new</label>
+                        <input
+                            type="text"
+                            id="newName"
+                            placeholder="my_shader"
+                        />
+                    </div>
+                    <div class="shader-actions">
+                        <button class="secondary" onclick="saveAsNew()">
+                            Save As
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <label>Lua Shader Code</label>
+                <div class="editor-container">
+                    <textarea
+                        id="shader"
+                        class="prism-live language-lua"
+                        style="--height: 380px"
+                        spellcheck="false"
+                    ></textarea>
+                </div>
+
+                <div class="controls">
+                    <button id="deployBtn" onclick="deploy()">
+                        Deploy to Device
+                    </button>
+                    <button id="unloadBtn" class="stop" onclick="unload()">
+                        Stop Shader
+                    </button>
+                    <span id="status" class="status"></span>
+                </div>
+
+                <div class="help">
+                    <strong>Function:</strong>
+                    <code>function shader(x, y, t, frame, dt)</code><br />
+                    <strong>Parameters:</strong>
+                    <code>x</code>, <code>y</code> (0-31),
+                    <code>t</code> (seconds), <code>frame</code> (count),
+                    <code>dt</code> (delta)<br />
+                    <strong>Return:</strong> <code>r, g, b</code> (0-255
+                    each)<br />
+                    <strong>Math:</strong>
+                    <code>math.sin</code>, <code>math.cos</code>,
+                    <code>math.sqrt</code>, <code>math.floor</code>,
+                    <code>math.abs</code>, <code>math.pi</code>,
+                    <code>math.min</code>, <code>math.max</code>,
+                    <code>math.random()</code>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://blissfuljs.com/bliss.shy.min.js"></script>
+        <script src="https://prismjs.com/prism.js" data-manual></script>
+        <script src="https://prismjs.com/components/prism-lua.min.js"></script>
+        <script src="https://live.prismjs.com/src/prism-live.js?load=lua"></script>
+        <script>
+            let BUILTIN_SHADERS = {};
+
+            // Fetch built-in shaders from firmware API
+            async function fetchBuiltinShaders() {
+                try {
+                    const response = await fetch(apiBase + "/api/shaders");
+                    const data = await response.json();
+                    for (const shader of data.shaders) {
+                        const codeResponse = await fetch(apiBase + "/api/shader/" + shader.index);
+                        const code = await codeResponse.text();
+                        BUILTIN_SHADERS["builtin_" + shader.index] = {
+                            name: shader.name,
+                            code: code
+                        };
+                    }
+                } catch (err) {
+                    console.log("Could not fetch shaders from API:", err);
+                }
+            }
+
+            const STORAGE_KEY = "unicorn_shaders";
+            const TARGET_HOST = "http://cosmic.lan";
+            let apiBase = "";  // Empty = relative URLs (same origin) pop
+
+            function getCustomShaders() {
+                try {
+                    return JSON.parse(
+                        localStorage.getItem(STORAGE_KEY) || "{}",
+                    );
+                } catch {
+                    return {};
+                }
+            }
+
+            function saveCustomShaders(shaders) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(shaders));
+            }
+
+            function populateShaderList() {
+                const select = document.getElementById("shaderSelect");
+                const currentValue = select.value;
+                select.innerHTML = "";
+
+                // Separate tutorials from regular shaders
+                const tutorials = [];
+                const regular = [];
+                for (const [id, shader] of Object.entries(BUILTIN_SHADERS)) {
+                    if (id.startsWith("tut_")) {
+                        tutorials.push([id, shader]);
+                    } else {
+                        regular.push([id, shader]);
+                    }
+                }
+
+                // Tutorials group
+                if (tutorials.length > 0) {
+                    const tutorialGroup = document.createElement("optgroup");
+                    tutorialGroup.label = "Tutorials";
+                    for (const [id, shader] of tutorials) {
+                        const opt = document.createElement("option");
+                        opt.value = id;
+                        opt.textContent = shader.name;
+                        tutorialGroup.appendChild(opt);
+                    }
+                    select.appendChild(tutorialGroup);
+                }
+
+                // Regular built-in shaders
+                const builtinGroup = document.createElement("optgroup");
+                builtinGroup.label = "Built-in";
+                for (const [id, shader] of regular) {
+                    const opt = document.createElement("option");
+                    opt.value = id;
+                    opt.textContent = shader.name;
+                    builtinGroup.appendChild(opt);
+                }
+                select.appendChild(builtinGroup);
+
+                const custom = getCustomShaders();
+                if (Object.keys(custom).length > 0) {
+                    const customGroup = document.createElement("optgroup");
+                    customGroup.label = "Custom";
+                    for (const [id, shader] of Object.entries(custom)) {
+                        const opt = document.createElement("option");
+                        opt.value = "custom:" + id;
+                        opt.textContent = shader.name + " *";
+                        customGroup.appendChild(opt);
+                    }
+                    select.appendChild(customGroup);
+                }
+
+                if (currentValue) {
+                    select.value = currentValue;
+                }
+                updateDeleteButton();
+            }
+
+            function loadShader() {
+                const select = document.getElementById("shaderSelect");
+                const value = select.value;
+                let code = "";
+
+                if (value.startsWith("custom:")) {
+                    const id = value.substring(7);
+                    const custom = getCustomShaders();
+                    if (custom[id]) {
+                        code = custom[id].code;
+                    }
+                } else if (BUILTIN_SHADERS[value]) {
+                    code = BUILTIN_SHADERS[value].code;
+                }
+
+                const textarea = document.getElementById("shader");
+                textarea.value = code;
+                // Trigger input event for Prism Live to update
+                textarea.dispatchEvent(new Event("input"));
+                updateDeleteButton();
+            }
+
+            function updateDeleteButton() {
+                const select = document.getElementById("shaderSelect");
+                const btn = document.getElementById("deleteBtn");
+                btn.disabled = !select.value.startsWith("custom:");
+            }
+
+            function saveShader() {
+                const select = document.getElementById("shaderSelect");
+                const value = select.value;
+                const code = document.getElementById("shader").value;
+
+                if (value.startsWith("custom:")) {
+                    const id = value.substring(7);
+                    const custom = getCustomShaders();
+                    custom[id].code = code;
+                    saveCustomShaders(custom);
+                    setStatus("Shader saved", "ok");
+                } else {
+                    setStatus(
+                        'Use "Save As" to save a copy of built-in shaders',
+                        "error",
+                    );
+                }
+            }
+
+            function saveAsNew() {
+                const nameInput = document.getElementById("newName");
+                let name = nameInput.value.trim();
+
+                if (!name) {
+                    setStatus("Enter a name for the shader", "error");
+                    return;
+                }
+
+                const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+
+                if (id in BUILTIN_SHADERS) {
+                    setStatus("Cannot use a built-in shader name", "error");
+                    return;
+                }
+
+                const code = document.getElementById("shader").value;
+                const custom = getCustomShaders();
+
+                custom[id] = { name: name, code: code };
+                saveCustomShaders(custom);
+
+                populateShaderList();
+                document.getElementById("shaderSelect").value = "custom:" + id;
+                nameInput.value = "";
+                updateDeleteButton();
+                setStatus('Shader saved as "' + name + '"', "ok");
+            }
+
+            function deleteShader() {
+                const select = document.getElementById("shaderSelect");
+                const value = select.value;
+
+                if (!value.startsWith("custom:")) {
+                    setStatus("Cannot delete built-in shaders", "error");
+                    return;
+                }
+
+                const id = value.substring(7);
+                const custom = getCustomShaders();
+                const name = custom[id]?.name || id;
+
+                if (!confirm('Delete shader "' + name + '"?')) {
+                    return;
+                }
+
+                delete custom[id];
+                saveCustomShaders(custom);
+
+                populateShaderList();
+                document.getElementById("shaderSelect").value = "plasma";
+                loadShader();
+                setStatus("Shader deleted", "ok");
+            }
+
+            function setStatus(text, type) {
+                const el = document.getElementById("status");
+                el.textContent = text;
+                el.className = "status " + (type || "");
+            }
+
+            async function deploy() {
+                const code = document.getElementById("shader").value;
+                setStatus("Deploying...", "");
+
+                try {
+                    const response = await fetch(apiBase + "/api/shader", {
+                        method: "POST",
+                        headers: { "Content-Type": "text/plain" },
+                        body: code,
+                    });
+                    const result = await response.json();
+
+                    if (result.status === "ok") {
+                        setStatus("Shader running on device", "ok");
+                    } else {
+                        setStatus(
+                            "Error: " + (result.message || "Unknown"),
+                            "error",
+                        );
+                    }
+                } catch (err) {
+                    setStatus("Failed: " + err.message, "error");
+                }
+            }
+
+            async function unload() {
+                setStatus("Stopping...", "");
+
+                try {
+                    const response = await fetch(apiBase + "/api/shader", {
+                        method: "DELETE",
+                    });
+                    const result = await response.json();
+                    setStatus(result.message || "Shader stopped", "");
+                } catch (err) {
+                    setStatus("Failed: " + err.message, "error");
+                }
+            }
+
+            async function checkTargetHost() {
+                try {
+                    const response = await fetch(TARGET_HOST + "/api/status", {
+                        method: "GET",
+                        signal: AbortSignal.timeout(3000),
+                    });
+                    const data = await response.json();
+                    if (data.status === "running") {
+                        apiBase = TARGET_HOST;
+                        setStatus("Connected to " + TARGET_HOST + " (v" + data.version + ")", "ok");
+                        return true;
+                    }
+                } catch (err) {
+                    // Host not reachable, use relative URLs
+                }
+                return false;
+            }
+
+            async function init() {
+                await checkTargetHost();
+                await fetchBuiltinShaders();
+                populateShaderList();
+                loadShader();
+            }
+
+            window.onload = init;
+        </script>
+    </body>
+</html>

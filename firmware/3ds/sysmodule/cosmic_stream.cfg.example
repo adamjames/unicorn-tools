@@ -1,0 +1,11 @@
+# Cosmic Stream Configuration
+# Place this file at /3ds/cosmic_stream.cfg on your SD card
+
+# Target host (IP address or hostname)
+host=cosmic.lan
+
+# Target port
+port=80
+
+# Frames per second (1-60)
+fps=20

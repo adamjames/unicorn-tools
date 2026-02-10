@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Hypercube</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; }
+    canvas { display: block; width: min(100vw, 100vh); height: min(100vw, 100vh); }
+  </style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<script>
+// 3D CUBE TUTORIAL 8: Putting It All Together
+//
+// This is the complete, polished version with:
+// - Rotation around TWO axes (Y and X)
+// - All constants at the top for easy tweaking
+// - Clean, organized code structure
+//
+// You now understand every line of this code!
+
+// Canvas setup (must be first to get dimensions)
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+canvas.width = canvas.offsetWidth;
+canvas.height = canvas.offsetHeight;
+
+// CONSTANTS - tweak these!
+const WIDTH = canvas.width, HEIGHT = canvas.height;
+const CENTER_X = WIDTH / 2, CENTER_Y = HEIGHT / 2;
+const SCALE = WIDTH * 0.44;
+const CAMERA_DIST = 1.8;
+const ROTATION_SPEED_Y = 0.5;
+const ROTATION_SPEED_X = 0.3;
+const ROTATION_SPEED_W = 1;
+const UNEVEN_TIME = false;
+const CUBE_SIZE = 0.7;
+const EDGE_BRIGHTNESS = 255;
+const GLOW_BRIGHTNESS = 60;
+const MIN_BRIGHTNESS = 0.2;
+const MAX_BRIGHTNESS = 1.0;
+const INVERT_BRIGHTNESS = false;
+const BG_R = 2, BG_G = 2, BG_B = 4;
+
+// Geometry
+const S = CUBE_SIZE;
+
+// CUBE VERTEX DIAGRAM (looking at the cube from the front-right)
+//
+//       2 -------- 1          Y+ (up)
+//      /|         /|          |
+//     / |        / |          |
+//    6 -------- 5  |          +---- X+ (right)
+//    |  3 ------|- 4         /
+//    | /        | /         Z+ (toward you)
+//    |/         |/
+//    7 -------- 8
+//
+// Front face (Z+): 1, 2, 3, 4 (clockwise from top-right)
+// Back face  (Z-): 5, 6, 7, 8 (clockwise from top-right)
+//
+const vertices = [
+  // Cube 1
+  // Front face (Z = -S)
+  {x: S, y: S, z: S, w:-S},  // [0] front top-right
+  {x:-S, y: S, z: S, w:-S},  // [1] front top-left
+  {x:-S, y:-S, z: S, w:-S},  // [2] front bottom-left
+  {x: S, y:-S, z: S, w:-S},  // [3] front bottom-right
+  {x: S, y: S, z:-S, w:-S},  // [4] back top-right
+  {x:-S, y: S, z:-S, w:-S},  // [5] back top-left
+  {x:-S, y:-S, z:-S, w:-S},  // [6] back bottom-left
+  {x: S, y:-S, z:-S, w:-S},  // [7] back bottom-right
+  //=================================================
+  // Cube 2
+  // Front face (Z = +S)
+  {x: S, y: S, z: S, w: S},  // [8] front top-right
+  {x:-S, y: S, z: S, w: S},  // [9] front top-left
+  {x:-S, y:-S, z: S, w: S},  // [10] front bottom-left
+  {x: S, y:-S, z: S, w: S},  // [11] front bottom-right
+  // Back face (Z = -S)
+  {x: S, y: S, z:-S, w: S},  // [12] back top-right
+  {x:-S, y: S, z:-S, w: S},  // [13] back top-left
+  {x:-S, y:-S, z:-S, w: S},  // [14] back bottom-left
+  {x: S, y:-S, z:-S, w: S},  // [15] back bottom-right
+];
+
+// EDGE DIAGRAM
+//
+// Front face edges:        Back face edges:         Connecting edges:
+//     [1]                      [5]                   (front -> back)
+//   2-----1                  6-----5
+//   |     |                  |     |                 1--5  [9]
+//[2]|     |[4]            [6]|     |[8]              2--6  [10]
+//   |     |                  |     |                 3--7  [11]
+//   3-----4                  7-----8                 4--8  [12]
+//     [3]                      [7]
+//
+const edges = [
+  // Cube 1
+  // Front face (Z+) edges
+  [0,1],  // [0] front top
+  [1,2],  // [1] front left
+  [2,3],  // [2] front bottom
+  [3,0],  // [3] front right
+  // Back face (Z-) edges
+  [4,5],  // [4] back top
+  [5,6],  // [5] back left
+  [6,7],  // [6] back bottom
+  [7,4],  // [7] back right
+  // Connecting edges (front to back)
+  [0,4],  // [8]  top-right connecting
+  [1,5],  // [9]  top-left connecting
+  [2,6],  // [10] bottom-left connecting
+  [3,7],  // [11] bottom-right connecting
+  //======================================
+  // Cube 2
+  // Front face (Z+) edges
+  [8,9],   // [12] front top
+  [9,10],  // [13] front left
+  [10,11], // [14] front bottom
+  [11,8],  // [15] front right
+  // Back face (Z-) edges
+  [12,13], // [16] back top
+  [13,14], // [17] back left
+  [14,15], // [18] back bottom
+  [15,12], // [19] back right
+  // Connecting edges (front to back)
+  [8,12],  // [20] top-right connecting
+  [9,13],  // [21] top-left connecting
+  [10,14], // [22] bottom-left connecting
+  [11,15], // [23] bottom-right connecting
+  //======================================
+  // Hypercube edges
+  [0,8],
+  [1,9],
+  [2,10],
+  [3,11],
+  [4,12],
+  [5,13],
+  [6,14],
+  [7,15]
+];
+
+// State
+const fb_r = new Float32Array(WIDTH * HEIGHT);
+const fb_g = new Float32Array(WIDTH * HEIGHT);
+const fb_b = new Float32Array(WIDTH * HEIGHT);
+const projected = [];
+
+// Rotation functions
+// XY plane (roll in 3D)
+function rotate_xy(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return { x: p.x*c - p.y*s, y: p.x*s + p.y*c, z: p.z, w: p.w };
+}
+
+// XZ plane (yaw in 3D) - rotate_y
+function rotate_xz(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return { x: p.x*c - p.z*s, y: p.y, z: p.x*s + p.z*c, w: p.w };
+}
+
+// YZ plane (pitch in 3D) - rotate_x
+function rotate_yz(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return { x: p.x, y: p.y*c - p.z*s, z: p.y*s + p.z*c, w: p.w };
+}
+
+// XW plane (4D only)
+function rotate_xw(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return { x: p.x*c - p.w*s, y: p.y, z: p.z, w: p.x*s + p.w*c };
+}
+
+// YW plane (4D only)
+function rotate_yw(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return { x: p.x, y: p.y*c - p.w*s, z: p.z, w: p.y*s + p.w*c };
+}
+
+// ZW plane (4D only) - rotate_zw
+function rotate_zw(p, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return { x: p.x, y: p.y, z: p.z*c - p.w*s, w: p.z*s + p.w*c };
+}
+
+const rotate_x = rotate_yz;
+const rotate_y = rotate_xz;
+const rotate_w = rotate_zw;
+
+// Depth to brightness: closer = brighter (maps z range to brightness range)
+function depth_to_brightness(z) {
+  const near = CAMERA_DIST - CUBE_SIZE;
+  const far = CAMERA_DIST + CUBE_SIZE;
+  let t = (z - near) / (far - near);  // 0 at near, 1 at far
+  t = Math.max(0, Math.min(1, t));
+  t = t * t;  // power curve for more dramatic falloff
+  if (INVERT_BRIGHTNESS) t = 1 - t;
+  return MAX_BRIGHTNESS - (MAX_BRIGHTNESS - MIN_BRIGHTNESS) * t;
+}
+
+// 4D -> 2D Perspective projection
+function project(p) {
+  // First: 4D -> 3D perspective (scale x, y, z by w-distance)
+  let w = p.w + CAMERA_DIST;
+  if (w < 0.1) w = 0.1;
+  const x3 = p.x / w;
+  const y3 = p.y / w;
+  const z3 = p.z / w;
+
+  // Then: 3D -> 2D perspective
+  let z = z3 + CAMERA_DIST;
+  if (z < 0.1) z = 0.1;
+  return {
+    x: CENTER_X + x3/z*SCALE,
+    y: CENTER_Y - y3/z*SCALE,
+    brightness: depth_to_brightness(z)
+  };
+}
+
+// Pixel setting with max brightness (per channel)
+function set_pixel(px, py, r, g, b) {
+  if (px >= 0 && px < WIDTH && py >= 0 && py < HEIGHT) {
+    const idx = py * WIDTH + px;
+    if (r > fb_r[idx]) fb_r[idx] = r;
+    if (g > fb_g[idx]) fb_g[idx] = g;
+    if (b > fb_b[idx]) fb_b[idx] = b;
+  }
+}
+
+// Bresenham line with glow and color
+function draw_line(x0, y0, x1, y1, b0, b1, r, g, b) {
+  x0 = Math.round(x0);
+  y0 = Math.round(y0);
+  x1 = Math.round(x1);
+  y1 = Math.round(y1);
+  const dx = Math.abs(x1 - x0);
+  let dy = -Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1;
+  const sy = y0 < y1 ? 1 : -1;
+  let err = dx + dy;
+  const brightness = (b0 + b1) / 2;
+  const edge_scale = (EDGE_BRIGHTNESS / 255) * brightness;
+  const glow_scale = (GLOW_BRIGHTNESS / 255) * brightness;
+  const glow_r = r * glow_scale, glow_g = g * glow_scale, glow_b = b * glow_scale;
+  r = r * edge_scale; g = g * edge_scale; b = b * edge_scale;
+  while (true) {
+    set_pixel(x0, y0, r, g, b);
+    set_pixel(x0-1, y0, glow_r, glow_g, glow_b);
+    set_pixel(x0+1, y0, glow_r, glow_g, glow_b);
+    set_pixel(x0, y0-1, glow_r, glow_g, glow_b);
+    set_pixel(x0, y0+1, glow_r, glow_g, glow_b);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sx; }
+    if (e2 <= dx) { err += dx; y0 += sy; }
+  }
+}
+
+// ImageData for efficient pixel rendering
+const imageData = ctx.createImageData(WIDTH, HEIGHT);
+
+function render(t) {
+  // Clear framebuffer
+  fb_r.fill(0);
+  fb_g.fill(0);
+  fb_b.fill(0);
+
+  const ay = t * ROTATION_SPEED_Y;
+  const ax = t * ROTATION_SPEED_X;
+
+  // time dimension
+  let aw = t * ROTATION_SPEED_W;
+  const aw_oscillating = t * ROTATION_SPEED_W + Math.sin(t) * 0.5;
+  if (UNEVEN_TIME) aw = aw_oscillating;
+
+  for (let i = 0; i < vertices.length; i++) {
+    const v = vertices[i];
+    //const r = rotate_w(rotate_x(rotate_y(v, ay), ax), aw);  // 1: W-X-Y
+    //const r = rotate_w(rotate_y(rotate_x(v, ax), ay), aw);  // 2: W-Y-X
+    const r = rotate_x(rotate_w(rotate_y(v, ay), aw), ax);    // 3: X-W-Y
+    //const r = rotate_x(rotate_y(rotate_w(v, aw), ay), ax);  // 4: X-Y-W
+    //const r = rotate_y(rotate_w(rotate_x(v, ax), aw), ay);  // 5: Y-W-X
+    //const r = rotate_y(rotate_x(rotate_w(v, aw), ax), ay);  // 6: Y-X-W
+    projected[i] = project(r);
+  }
+
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    let r, g, b;
+    if (e[0] <= 7 && e[1] <= 7) {
+      // Cube 1: green
+      r = 60; g = 255; b = 60;
+    } else if (e[0] >= 8 && e[1] >= 8) {
+      // Cube 2: red
+      r = 255; g = 60; b = 60;
+    } else {
+      // Connecting edges: blue
+      r = 60; g = 60; b = 255;
+    }
+    const p1 = projected[e[0]], p2 = projected[e[1]];
+    draw_line(p1.x, p1.y, p2.x, p2.y, p1.brightness, p2.brightness, r, g, b);
+  }
+
+  // Copy framebuffer to imageData
+  for (let i = 0; i < WIDTH * HEIGHT; i++) {
+    const pi = i * 4;
+    const r = fb_r[i], g = fb_g[i], b = fb_b[i];
+    if (r > 0 || g > 0 || b > 0) {
+      imageData.data[pi]     = Math.min(255, r) | 0;
+      imageData.data[pi + 1] = Math.min(255, g) | 0;
+      imageData.data[pi + 2] = Math.min(255, b) | 0;
+    } else {
+      imageData.data[pi]     = BG_R;
+      imageData.data[pi + 1] = BG_G;
+      imageData.data[pi + 2] = BG_B;
+    }
+    imageData.data[pi + 3] = 255;
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+// Animation loop
+let startTime = null;
+function animate(timestamp) {
+  if (!startTime) startTime = timestamp;
+  const t = (timestamp - startTime) / 1000;
+  render(t);
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+
+// Congratulations! You understand 3D graphics!
+// Try: ROTATION_SPEED_Y = 0 to see only X rotation
+// Try: CAMERA_DIST = 1.2 for extreme perspective
+</script>
+</body>
+</html>

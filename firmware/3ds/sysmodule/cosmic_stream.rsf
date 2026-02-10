@@ -1,0 +1,94 @@
+BasicInfo:
+  Title                   : cosmic_stream
+  CompanyCode             : "00"
+  ProductCode             : "CTR-HB-COSM"
+  ContentType             : Application
+  Logo                    : None
+
+TitleInfo:
+  UniqueId                : 0xC053
+  Category                : Base
+
+Option:
+  UseOnSD                 : true
+  FreeProductCode         : true
+  MediaFootPadding        : false
+  EnableCrypt             : false
+  EnableCompress          : true
+
+AccessControlInfo:
+  IdealProcessor                : 1
+  AffinityMask                  : 3
+  Priority                      : 28
+  MaxCpu                        : 0x9E
+  DisableDebug                  : false
+  EnableForceDebug              : false
+  CanWriteSharedPage            : false
+  CanUsePrivilegedPriority      : false
+  PermitMainFunctionArgument    : false
+  CanShareDeviceMemory          : false
+  RunnableOnSleep               : true
+  SpecialMemoryArrange          : false
+  ResourceLimitCategory         : SysApplet
+
+  CoreVersion                   : 2
+  DescVersion                   : 2
+
+  MemoryType                    : System
+  HandleTableSize               : 512
+  MemoryMapping:
+    - 1F000000-1F5FFFFF:r
+
+  IORegisterMapping:
+
+  SystemCallAccess:
+    ArbitrateAddress             : 34
+    Break                        : 60
+    CloseHandle                  : 35
+    ConnectToPort                : 45
+    ControlMemory                : 1
+    CreateAddressArbiter         : 33
+    CreateEvent                  : 23
+    CreateMemoryBlock            : 30
+    CreateMutex                  : 19
+    CreateSemaphore              : 21
+    CreateThread                 : 8
+    DuplicateHandle              : 39
+    ExitProcess                  : 3
+    ExitThread                   : 9
+    GetCurrentProcessorNumber    : 17
+    GetProcessId                 : 53
+    GetProcessIdealProcessor     : 6
+    GetResourceLimit             : 56
+    GetResourceLimitCurrentValues : 58
+    GetResourceLimitLimitValues  : 57
+    GetSystemInfo                : 26
+    GetSystemTick                : 40
+    GetThreadId                  : 55
+    GetThreadIdealProcessor      : 15
+    GetThreadPriority            : 11
+    MapMemoryBlock               : 31
+    OutputDebugString            : 61
+    QueryMemory                  : 2
+    ReleaseMutex                 : 20
+    ReleaseSemaphore             : 22
+    SendSyncRequest              : 44
+    SetThreadPriority            : 12
+    SignalEvent                  : 24
+    SleepThread                  : 10
+    UnmapMemoryBlock             : 32
+    WaitSynchronization1         : 36
+    WaitSynchronizationN         : 37
+    ClearEvent                   : 25
+
+  ServiceAccessControl:
+    - gsp::Gpu
+    - soc:U
+    - fs:USER
+    - ac:u
+    - cfg:u
+
+SystemControlInfo:
+  SaveDataSize          : 0KB
+  RemasterVersion       : 0
+  StackSize             : 0x4000

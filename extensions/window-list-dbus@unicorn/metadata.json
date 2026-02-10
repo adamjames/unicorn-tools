@@ -1,0 +1,8 @@
+{
+  "uuid": "window-list-dbus@unicorn",
+  "name": "Window List D-Bus",
+  "description": "Exposes window titles and geometry over D-Bus for automation scripts. Used by UnicornLEDStream to get window dimensions. Query with: gdbus call --session --dest org.unicorn.WindowList --object-path /org/unicorn/WindowList --method org.unicorn.WindowList.List",
+  "url": "https://github.com/DuoDreamer/UnicornLEDStream",
+  "shell-version": ["49"],
+  "version": 1
+}

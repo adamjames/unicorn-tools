@@ -1,0 +1,327 @@
+<!doctype html>
+<html>
+    <head>
+        <title>4D Hypercube</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+            }
+            body {
+                overflow: hidden;
+                background: #000;
+            }
+            canvas {
+                display: block;
+            }
+        </style>
+    </head>
+    <body>
+        <script>
+            // CONSTANTS - tweak these!
+            const ROTATION_SPEED_Y = 0.5;
+            const ROTATION_SPEED_X = 0.5;
+            const ROTATION_SPEED_W = 1;
+            const UNEVEN_TIME = true;
+            const DRAW_VERTICES = true;
+            const DRAW_EDGES = true;
+            const CUBE_SIZE = 0.5;
+            const BG_R = 8,
+                BG_G = 8,
+                BG_B = 16;
+
+            // Geometry
+            const S = CUBE_SIZE;
+
+            // CUBE VERTEX DIAGRAM (looking at the cube from the front-right)
+            //
+            //       2 -------- 1          Y+ (up)
+            //      /|         /|          |
+            //     / |        / |          |
+            //    6 -------- 5  |          +---- X+ (right)
+            //    |  3 ------|- 4         /
+            //    | /        | /         Z+ (toward you)
+            //    |/         |/
+            //    7 -------- 8
+            //
+            // Front face (Z+): 1, 2, 3, 4 (clockwise from top-right)
+            // Back face  (Z-): 5, 6, 7, 8 (clockwise from top-right)
+            //
+            const vertices = [
+                // Cube 1
+                // Front face (Z = -S)
+                { x: S, y: S, z: S, w: -S }, // [1] front top-right
+                { x: -S, y: S, z: S, w: -S }, // [2] front top-left
+                { x: -S, y: -S, z: S, w: -S }, // [3] front bottom-left
+                { x: S, y: -S, z: S, w: -S }, // [4] front bottom-right
+                { x: S, y: S, z: -S, w: -S }, // [5] back top-right
+                { x: -S, y: S, z: -S, w: -S }, // [6] back top-left
+                { x: -S, y: -S, z: -S, w: -S }, // [7] back bottom-left
+                { x: S, y: -S, z: -S, w: -S }, // [8] back bottom-right
+                //=================================================
+                // Cube 2
+                // Front face (Z = +S)
+                { x: S, y: S, z: S, w: S }, // [1] front top-right
+                { x: -S, y: S, z: S, w: S }, // [2] front top-left
+                { x: -S, y: -S, z: S, w: S }, // [3] front bottom-left
+                { x: S, y: -S, z: S, w: S }, // [4] front bottom-right
+                // Back face (Z = -S)
+                { x: S, y: S, z: -S, w: S }, // [5] back top-right
+                { x: -S, y: S, z: -S, w: S }, // [6] back top-left
+                { x: -S, y: -S, z: -S, w: S }, // [7] back bottom-left
+                { x: S, y: -S, z: -S, w: S }, // [8] back bottom-right
+            ];
+
+            // EDGE DIAGRAM
+            //
+            // Front face edges:        Back face edges:         Connecting edges:
+            //     [1]                      [5]                   (front -> back)
+            //   2-----1                  6-----5
+            //   |     |                  |     |                 1--5  [9]
+            //[2]|     |[4]            [6]|     |[8]              2--6  [10]
+            //   |     |                  |     |                 3--7  [11]
+            //   3-----4                  7-----8                 4--8  [12]
+            //     [3]                      [7]
+            //
+            const edges = [
+                // Cube 1
+                // Front face (Z+) edges
+                [0, 1], // [1] front top
+                [1, 2], // [2] front left
+                [2, 3], // [3] front bottom
+                [3, 0], // [4] front right
+                // Back face (Z-) edges
+                [4, 5], // [5] back top
+                [5, 6], // [6] back left
+                [6, 7], // [7] back bottom
+                [7, 4], // [8] back right
+                // Connecting edges (front to back)
+                [0, 4], // [9]  top-right connecting
+                [1, 5], // [10] top-left connecting
+                [2, 6], // [11] bottom-left connecting
+                [3, 7], // [12] bottom-right connecting
+                //======================================
+                // Cube 2
+                // Front face (Z+) edges
+                [8, 9], // [1] front top
+                [9, 10], // [2] front left
+                [10, 11], // [3] front bottom
+                [11, 8], // [4] front right
+                // Back face (Z-) edges
+                [12, 13], // [5] back top
+                [13, 14], // [6] back left
+                [14, 15], // [7] back bottom
+                [15, 12], // [8] back right
+                // Connecting edges (front to back)
+                [8, 12], // [9]  top-right connecting
+                [9, 13], // [10] top-left connecting
+                [10, 14], // [11] bottom-left connecting
+                [11, 15], // [12] bottom-right connecting
+                //======================================
+                // Hypercube edges
+                [0, 8],
+                [1, 9],
+                [2, 10],
+                [3, 11],
+                [4, 12],
+                [5, 13],
+                [6, 14],
+                [7, 15],
+            ];
+
+            // State
+            let WIDTH, HEIGHT, CENTER_X, CENTER_Y, SCALE, CAMERA_DIST;
+            let projected = [];
+
+            const canvas = document.createElement("canvas");
+            document.body.appendChild(canvas);
+            const ctx = canvas.getContext("2d");
+
+            function resize() {
+                WIDTH = window.innerWidth;
+                HEIGHT = window.innerHeight;
+                CENTER_X = WIDTH / 2;
+                CENTER_Y = HEIGHT / 2;
+                SCALE = Math.min(WIDTH, HEIGHT) * 0.4;
+                CAMERA_DIST = 1.8;
+                canvas.width = WIDTH;
+                canvas.height = HEIGHT;
+            }
+
+            // Rotation functions
+            // XY plane (roll in 3D)
+            function rotate_xy(p, a) {
+                const c = Math.cos(a),
+                    s = Math.sin(a);
+                return {
+                    x: p.x * c - p.y * s,
+                    y: p.x * s + p.y * c,
+                    z: p.z,
+                    w: p.w,
+                };
+            }
+
+            // XZ plane (yaw in 3D) - your rotate_y
+            function rotate_xz(p, a) {
+                const c = Math.cos(a),
+                    s = Math.sin(a);
+                return {
+                    x: p.x * c - p.z * s,
+                    y: p.y,
+                    z: p.x * s + p.z * c,
+                    w: p.w,
+                };
+            }
+
+            // YZ plane (pitch in 3D) - your rotate_x
+            function rotate_yz(p, a) {
+                const c = Math.cos(a),
+                    s = Math.sin(a);
+                return {
+                    x: p.x,
+                    y: p.y * c - p.z * s,
+                    z: p.y * s + p.z * c,
+                    w: p.w,
+                };
+            }
+
+            // XW plane (4D only)
+            function rotate_xw(p, a) {
+                const c = Math.cos(a),
+                    s = Math.sin(a);
+                return {
+                    x: p.x * c - p.w * s,
+                    y: p.y,
+                    z: p.z,
+                    w: p.x * s + p.w * c,
+                };
+            }
+
+            // YW plane (4D only)
+            function rotate_yw(p, a) {
+                const c = Math.cos(a),
+                    s = Math.sin(a);
+                return {
+                    x: p.x,
+                    y: p.y * c - p.w * s,
+                    z: p.z,
+                    w: p.y * s + p.w * c,
+                };
+            }
+
+            // ZW plane (4D only) - your rotate_zw
+            function rotate_zw(p, a) {
+                const c = Math.cos(a),
+                    s = Math.sin(a);
+                return {
+                    x: p.x,
+                    y: p.y,
+                    z: p.z * c - p.w * s,
+                    w: p.z * s + p.w * c,
+                };
+            }
+
+            const rotate_x = rotate_yz;
+            const rotate_y = rotate_xz;
+            const rotate_w = rotate_zw;
+
+            // Perspective projection
+            function project(p) {
+                let z = p.z + CAMERA_DIST;
+                if (z < 0.1) z = 0.1;
+                return {
+                    x: CENTER_X + (p.x / z) * SCALE,
+                    y: CENTER_Y - (p.y / z) * SCALE,
+                };
+            }
+
+            function render(t) {
+                ctx.fillStyle = "rgb(" + BG_R + "," + BG_G + "," + BG_B + ")";
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+                const ay = t * ROTATION_SPEED_Y;
+                const ax = t * ROTATION_SPEED_X;
+
+                // time dimension
+                let aw = t * ROTATION_SPEED_W;
+                const aw_oscillating =
+                    t * ROTATION_SPEED_W + Math.sin(t) * CUBE_SIZE;
+                if (UNEVEN_TIME) aw = aw_oscillating;
+
+                projected = [];
+                for (let i = 0; i < vertices.length; i++) {
+                    //const r = rotate_w(rotate_x(rotate_y(vertices[i], ay), ax), aw);  // 1: W-X-Y
+                    //const r = rotate_w(rotate_y(rotate_x(vertices[i], ax), ay), aw);  // 2: W-Y-X
+                    let r = rotate_x(
+                        rotate_w(rotate_y(vertices[i], ay), aw),
+                        ax,
+                    ); // 3: X-W-Y
+                    //const r = rotate_x(rotate_y(rotate_w(vertices[i], aw), ay), ax);  // 4: X-Y-W
+                    //const r = rotate_y(rotate_w(rotate_x(vertices[i], ax), aw), ay);  // 5: Y-W-X
+                    //const r = rotate_y(rotate_x(rotate_w(vertices[i], aw), ax), ay);  // 6: Y-X-W
+                    projected[i] = project(r);
+                }
+
+                if (DRAW_EDGES) {
+                    ctx.lineWidth = 2;
+                    for (let i = 0; i < edges.length; i++) {
+                        const e = edges[i];
+                        let r, g, b;
+                        if (e[0] <= 7 && e[1] <= 7) {
+                            // Cube 1: green
+                            r = 60;
+                            g = 255;
+                            b = 60;
+                        } else if (e[0] >= 8 && e[1] >= 8) {
+                            // Cube 2: red
+                            r = 255;
+                            g = 60;
+                            b = 60;
+                        } else {
+                            // Connecting edges: blue
+                            r = 60;
+                            g = 60;
+                            b = 255;
+                        }
+                        ctx.strokeStyle = "rgb(" + r + "," + g + "," + b + ")";
+                        ctx.beginPath();
+                        ctx.moveTo(projected[e[0]].x, projected[e[0]].y);
+                        ctx.lineTo(projected[e[1]].x, projected[e[1]].y);
+                        ctx.stroke();
+                    }
+                }
+
+                if (DRAW_VERTICES) {
+                    for (let i = 0; i < projected.length; i++) {
+                        const p = projected[i];
+                        let r, g, b;
+                        if (i <= 7) {
+                            r = 100;
+                            g = 255;
+                            b = 100; // Cube 1: bright green
+                        } else {
+                            r = 255;
+                            g = 100;
+                            b = 100; // Cube 2: bright red
+                        }
+                        ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            }
+
+            resize();
+            window.addEventListener("resize", resize);
+
+            let startTime = performance.now();
+            function animate() {
+                const t = (performance.now() - startTime) / 1000;
+                render(t);
+                requestAnimationFrame(animate);
+            }
+            animate();
+        </script>
+    </body>
+</html>

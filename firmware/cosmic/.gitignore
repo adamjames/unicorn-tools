@@ -1,0 +1,10 @@
+# Build artifacts
+build/
+compile_commands.json
+
+# IDE/editor
+.cache/
+.clangd
+
+# Local secrets
+secrets.h
