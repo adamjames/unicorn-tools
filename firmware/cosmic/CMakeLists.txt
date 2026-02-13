@@ -123,6 +123,10 @@ add_executable(cosmic-lite
     src/main_lite.cpp
     src/board_config.cpp
     src/http_server_lite.cpp
+    # KCP reliable stream protocol (disabled - too much RAM)
+    # thirdparty/ikcp.c
+    # TJpgDec - Tiny JPEG Decoder
+    thirdparty/tjpgd.c
     # Pimoroni libraries (pico_synth required by cosmic_unicorn DMA handler)
     # pico_graphics still needed: cosmic_unicorn.cpp::update() references PicoGraphics types
     thirdparty/pimoroni/cosmic_unicorn.cpp

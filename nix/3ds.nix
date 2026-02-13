@@ -213,6 +213,68 @@ let
     echo "Deployed: luma/plugins/default.3gx"
   '';
 
+  # Build script for NTR-HR
+  buildNtrHr = pkgs.writeShellScriptBin "cosmic-ntr-build" ''
+    set -euo pipefail
+
+    PROJECT_DIR="''${1:-$(pwd)/firmware/3ds}"
+    NTR_DIR="$PROJECT_DIR/ntr-hr"
+
+    if [[ ! -d "$NTR_DIR" ]]; then
+      echo "ERROR: NTR-HR not found. Clone it first:"
+      echo "  git clone https://github.com/xzn/ntr-hr firmware/3ds/ntr-hr"
+      exit 1
+    fi
+
+    echo "Building NTR-HR..."
+
+    # NTR-HR needs its own Dockerfile with Rust
+    ${pkgs.docker}/bin/docker build -t ntr-hr-builder "$NTR_DIR/dockerfiles"
+
+    ${pkgs.docker}/bin/docker run --rm \
+      -v "$NTR_DIR:/work" \
+      -w /work \
+      ntr-hr-builder \
+      bash -c '
+        set -e
+        # Initialize libctru submodule if needed
+        if [[ ! -f libctru/libctru/Makefile ]]; then
+          git submodule update --init --recursive
+        fi
+        ./make.sh
+      '
+
+    echo "Built: $NTR_DIR/release/*.bin"
+  '';
+
+  # Deploy NTR-HR binaries to 3DS
+  # NTR-HR needs BootNTR selector to load - deploy bins to SD card
+  deployNtrHr = pkgs.writeShellScriptBin "cosmic-ntr-deploy" ''
+    set -euo pipefail
+
+    PROJECT_DIR="''${1:-$(pwd)/firmware/3ds}"
+    NTR_DIR="$PROJECT_DIR/ntr-hr"
+    FTP_HOST="''${2:-10.0.0.222:5000}"
+    FTP_URL="ftp://$FTP_HOST"
+
+    if [[ ! -d "$NTR_DIR/release" ]]; then
+      echo "ERROR: NTR-HR not built. Run cosmic-ntr-build first."
+      exit 1
+    fi
+
+    echo "Deploying NTR-HR to 3DS at $FTP_HOST..."
+
+    # Deploy all .bin files to /ntr-hr/ on SD card
+    for bin in "$NTR_DIR/release"/*.bin; do
+      if [[ -f "$bin" ]]; then
+        ${pkgs.curl}/bin/curl -s --ftp-create-dirs -T "$bin" "$FTP_URL/ntr-hr/$(basename "$bin")"
+        echo "Deployed: ntr-hr/$(basename "$bin")"
+      fi
+    done
+
+    echo "Done. Use BootNTR Selector to load NTR-HR."
+  '';
+
   # Mock server for testing
   pythonEnv = unstable.python313.withPackages (ps: with ps; [ pygame ]);
   mockServer = pkgs.writeShellScriptBin "cosmic-mock" ''
@@ -225,6 +287,8 @@ in
     buildSysmodule
     buildPlugin
     deployScript
+    buildNtrHr
+    deployNtrHr
     mockServer
     pkgs.docker
     pkgs.curl
@@ -236,9 +300,11 @@ in
     echo "  cosmic-3ds-build            - Build sysmodule"
     echo "  cosmic-3gx-build            - Build 3GX plugin"
     echo "  cosmic-3ds-deploy [host]    - Deploy via FTP (default: 10.0.0.222:5000)"
+    echo "  cosmic-ntr-build            - Build NTR-HR"
+    echo "  cosmic-ntr-deploy [host]    - Deploy NTR-HR via FTP"
     echo "  cosmic-mock                 - Run mock LED panel"
   '';
 
   # Export scripts for flake apps
-  inherit buildSysmodule buildPlugin deployScript;
+  inherit buildSysmodule buildPlugin deployScript buildNtrHr deployNtrHr;
 }

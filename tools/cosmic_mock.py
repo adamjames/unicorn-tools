@@ -97,23 +97,32 @@ def run_udp_server(port):
     sock.bind(("0.0.0.0", port))
     print(f"UDP server listening on port {port}")
 
+    pkt_count = 0
     while True:
         data, addr = sock.recvfrom(FRAME_SIZE + 64)  # Allow some overhead
+        pkt_count += 1
+        if pkt_count <= 5 or pkt_count % 100 == 0:
+            print(f"UDP packet #{pkt_count} from {addr}: {len(data)} bytes")
         if len(data) == FRAME_SIZE:
             with frame_lock:
                 frame_data[:] = data
             frame_updated.set()
+        else:
+            print(f"  WARNING: Expected {FRAME_SIZE} bytes, got {len(data)}")
 
 
 def run_pygame_display(scale):
+    import time
     pygame.init()
     screen = pygame.display.set_mode((WIDTH * scale, HEIGHT * scale))
-    pygame.display.set_caption("Cosmic Mock")
+    pygame.display.set_caption("Cosmic Mock - 0 frames")
     clock = pygame.time.Clock()
 
     surface = pygame.Surface((WIDTH, HEIGHT))
     running = True
-    frames = 0
+    frames_received = 0
+    last_fps_time = time.time()
+    fps_frame_count = 0
 
     while running:
         for event in pygame.event.get():
@@ -130,16 +139,22 @@ def run_pygame_display(scale):
                         idx = (y * WIDTH + x) * 3
                         r, g, b = frame_data[idx], frame_data[idx+1], frame_data[idx+2]
                         surface.set_at((x, y), (r, g, b))
-            frames += 1
+            frames_received += 1
+            fps_frame_count += 1
 
         # Scale and blit
         scaled = pygame.transform.scale(surface, (WIDTH * scale, HEIGHT * scale))
         screen.blit(scaled, (0, 0))
         pygame.display.flip()
 
-        # Show FPS in title periodically
-        if frames % 30 == 0:
-            pygame.display.set_caption(f"Cosmic Mock - {clock.get_fps():.1f} FPS")
+        # Calculate actual received FPS every second
+        now = time.time()
+        elapsed = now - last_fps_time
+        if elapsed >= 1.0:
+            actual_fps = fps_frame_count / elapsed
+            pygame.display.set_caption(f"Cosmic Mock - {frames_received} frames ({actual_fps:.1f} fps)")
+            fps_frame_count = 0
+            last_fps_time = now
 
         clock.tick(60)
 

@@ -21,6 +21,11 @@
 #include "lwip/udp.h"
 #include "lwip/dns.h"
 
+extern "C" {
+// #include "ikcp.h"  // Disabled - too much RAM
+#include "tjpgd.h"
+}
+
 namespace http_server {
 
 namespace {
@@ -41,6 +46,7 @@ struct ClientState {
 
 struct tcp_pcb* server_pcb = nullptr;
 struct udp_pcb* udp_server_pcb = nullptr;
+struct udp_pcb* ntr_server_pcb = nullptr;  // NTR streaming on port 8001
 volatile int active_connections = 0;
 volatile bool g_reboot_requested = false;
 volatile bool g_reboot_to_bootloader = false;
@@ -78,12 +84,42 @@ volatile float g_pending_brightness_value = 0.5f;
 static spin_lock_t* g_frame_lock = nullptr;
 static uint8_t g_frame_buffer[32 * 32 * 3];      // Incoming frame (written by Core 1)
 static uint8_t g_ready_frame[32 * 32 * 3];       // Ready for Core 0 to read
+static uint8_t g_ntr_staging_frame[32 * 32 * 3]; // NTR staging buffer (assembled before swap)
 static volatile bool g_pending_frame = false;
 static volatile uint32_t g_frame_sequence = 0;   // Increments on each new frame
 
 // Delta frame support: store indices of changed pixels
 static uint16_t g_delta_indices[1024];           // Indices of changed pixels
 static volatile uint16_t g_delta_count = 0;      // 0 = full frame, >0 = delta with this many changes
+
+// NTR debug counters
+static volatile uint32_t g_ntr_packets_received = 0;
+static volatile uint8_t g_ntr_last_header[4] = {0};
+
+// KCP Reliable Stream state (disabled - too much RAM)
+// static ikcpcb* g_kcp = nullptr;
+static bool g_kcp_active = false;
+
+// JPEG decoding state
+// NTR JPEG frames are typically 5-15KB at low quality settings
+static uint8_t g_jpeg_buffer[16384];  // 16KB for JPEG data
+static size_t g_jpeg_size = 0;
+static size_t g_jpeg_read_offset = 0;  // Current read position for TJpgDec input
+static uint8_t g_jpeg_frame_id = 0;
+static uint8_t g_jpeg_packets_received = 0;
+static uint8_t g_jpeg_last_packet_num = 0;
+static bool g_jpeg_got_last = false;
+// Re-use g_ntr_staging_frame for JPEG output to save RAM
+#define g_jpeg_decoded_frame g_ntr_staging_frame
+static uint16_t g_jpeg_width = 0;   // Decoded JPEG dimensions
+static uint16_t g_jpeg_height = 0;
+
+// TJpgDec work buffer (3100 bytes minimum for baseline JPEG)
+static uint8_t g_jpeg_work[4096];
+
+// JPEG debug counters
+static volatile uint32_t g_jpeg_frames_decoded = 0;
+static volatile uint32_t g_jpeg_decode_errors = 0;
 
 // HTTP response templates - with keep-alive support and CORS
 const char* HTTP_200_KEEPALIVE = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: keep-alive\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: %d\r\n\r\n%s";
@@ -244,6 +280,28 @@ static void process_request(ClientState* state) {
     if (strcmp(uri, "/api/status") == 0) {
         json_response = "{\"status\":\"running\",\"version\":\"1.0-lite\"}";
         handled = true;
+    }
+    else if (strcmp(uri, "/api/ntr-debug") == 0) {
+        static char ntr_debug[256];
+        snprintf(ntr_debug, sizeof(ntr_debug),
+            "{\"packets\":%lu,\"last_hdr\":[%d,%d,%d,%d],"
+            "\"jpeg_frames\":%lu,\"jpeg_errors\":%lu,\"jpeg_size\":%lu,\"jpeg_dim\":[%d,%d]}",
+            (unsigned long)g_ntr_packets_received,
+            g_ntr_last_header[0], g_ntr_last_header[1],
+            g_ntr_last_header[2], g_ntr_last_header[3],
+            (unsigned long)g_jpeg_frames_decoded,
+            (unsigned long)g_jpeg_decode_errors,
+            (unsigned long)g_jpeg_size,
+            (int)g_jpeg_width, (int)g_jpeg_height);
+        int len = snprintf(response, sizeof(response), response_template,
+            (int)strlen(ntr_debug), ntr_debug);
+        send_response(state->pcb, response, len);
+        if (state->keep_alive) {
+            reset_client_state(state);
+        } else {
+            close_client(state);
+        }
+        return;
     }
     else if (strcmp(uri, "/api/brightness") == 0) {
         if (strcmp(method, "POST") == 0 && body && body_len > 0) {
@@ -464,24 +522,217 @@ static err_t tcp_poll_callback(void* arg, struct tcp_pcb* pcb) {
     return ERR_OK;
 }
 
+// Lossless mode buffers removed - using JPEG mode only to save RAM
+static uint32_t g_ntr_frame_id = 0;
+
+// Lossless YUV/YCbCr conversion functions removed - using JPEG only
+
+// TJpgDec input callback - reads from g_jpeg_buffer
+static size_t jpeg_input_func(JDEC* jd, uint8_t* buff, size_t nbyte) {
+    size_t available = g_jpeg_size - g_jpeg_read_offset;
+    size_t to_read = (nbyte > available) ? available : nbyte;
+
+    if (buff) {
+        memcpy(buff, g_jpeg_buffer + g_jpeg_read_offset, to_read);
+    }
+    g_jpeg_read_offset += to_read;
+    return to_read;
+}
+
+// TJpgDec output callback - writes downsampled pixels to g_jpeg_decoded_frame
+// NTR-HR JPEG: 240x400 portrait -> rotate 90° CW -> 400x240 landscape -> scale to 32x32
+// Maps 30 source rows to rows 1-30 of dest, then duplicates row 1->0 and row 30->31
+static int jpeg_output_func(JDEC* jd, void* bitmap, JRECT* rect) {
+    uint8_t* src = (uint8_t*)bitmap;
+
+    // JPEG dimensions after scaling (portrait: 240x400 -> 30x50 at 1/8)
+    uint16_t jpeg_width = g_jpeg_width >> jd->scale;   // 30
+    uint16_t jpeg_height = g_jpeg_height >> jd->scale; // 50
+
+    // After 90° CW rotation: landscape 50x30
+    uint16_t land_width = jpeg_height;   // 50
+    uint16_t land_height = jpeg_width;   // 30
+
+    int rect_width = rect->right - rect->left + 1;
+    int rect_height = rect->bottom - rect->top + 1;
+
+    for (int ry = 0; ry < rect_height; ry++) {
+        int jy = rect->top + ry;
+
+        for (int rx = 0; rx < rect_width; rx++) {
+            int jx = rect->left + rx;
+
+            // Rotate 90° CW: portrait (jx, jy) -> landscape (lx, ly)
+            int lx = jy;
+            int ly = (jpeg_width - 1) - jx;
+
+            // Map to 32x32: offset by 1 row so we fill rows 1-30, leaving 0 and 31 for duplication
+            int dst_x = (lx * 32) / land_width;
+            int dst_y = (ly * 30) / land_height + 1;  // +1 to start at row 1
+
+            if (dst_x >= 32 || dst_y >= 31) continue;
+
+            uint8_t* sp = src + (ry * rect_width + rx) * 3;
+            size_t dst_idx = (dst_y * 32 + dst_x) * 3;
+            g_jpeg_decoded_frame[dst_idx]     = sp[0];
+            g_jpeg_decoded_frame[dst_idx + 1] = sp[1];
+            g_jpeg_decoded_frame[dst_idx + 2] = sp[2];
+        }
+    }
+
+    return 1;
+}
+
+// Process completed JPEG frame
+static void process_jpeg_frame() {
+    JDEC jd;
+    JRESULT res;
+
+    // Reset read offset for TJpgDec
+    g_jpeg_read_offset = 0;
+
+    // Prepare decompressor
+    res = jd_prepare(&jd, jpeg_input_func, g_jpeg_work, sizeof(g_jpeg_work), nullptr);
+    if (res != JDR_OK) {
+        g_jpeg_decode_errors++;
+        return;
+    }
+
+    // Store dimensions for output callback
+    g_jpeg_width = jd.width;
+    g_jpeg_height = jd.height;
+
+    // Calculate scale factor to get close to 32x32
+    // scale: 0=1/1, 1=1/2, 2=1/4, 3=1/8
+    // For 400x240: scale 3 gives 50x30
+    uint8_t scale = 0;
+    if (jd.width >= 256 || jd.height >= 256) scale = 3;  // 1/8
+    else if (jd.width >= 128 || jd.height >= 128) scale = 2;  // 1/4
+    else if (jd.width >= 64 || jd.height >= 64) scale = 1;   // 1/2
+
+    // Clear destination buffer
+    memset(g_jpeg_decoded_frame, 0, sizeof(g_jpeg_decoded_frame));
+
+    // Decompress with downsampling
+    res = jd_decomp(&jd, jpeg_output_func, scale);
+    if (res != JDR_OK) {
+        g_jpeg_decode_errors++;
+        return;
+    }
+
+    // Duplicate row 1 to row 0, and row 30 to row 31
+    memcpy(g_jpeg_decoded_frame, g_jpeg_decoded_frame + 32 * 3, 32 * 3);
+    memcpy(g_jpeg_decoded_frame + 31 * 32 * 3, g_jpeg_decoded_frame + 30 * 32 * 3, 32 * 3);
+
+    // Queue frame for display
+    uint32_t irq = spin_lock_blocking(g_frame_lock);
+    memcpy(g_ready_frame, g_jpeg_decoded_frame, sizeof(g_ready_frame));
+    g_delta_count = 0;
+    g_frame_sequence++;
+    g_pending_frame = true;
+    spin_unlock(g_frame_lock, irq);
+
+    g_jpeg_frames_decoded++;
+}
+
+// Lossless mode function removed - using JPEG only
+
 // UDP receive callback - for low-latency frame streaming
 static void udp_recv_callback(void* arg, struct udp_pcb* pcb, struct pbuf* p,
                                const ip_addr_t* addr, u16_t port) {
     if (!p) return;
 
-    // Check for full frame (3072 bytes = 32x32x3 RGB)
+    // Check for direct 32x32 frame (3072 bytes = 32x32x3 RGB)
     constexpr size_t FRAME_SIZE = 32 * 32 * 3;
     if (p->tot_len == FRAME_SIZE && !g_pending_frame) {
-        // Copy frame data
         pbuf_copy_partial(p, g_frame_buffer, FRAME_SIZE, 0);
 
-        // Atomically update ready frame
         uint32_t irq = spin_lock_blocking(g_frame_lock);
         memcpy(g_ready_frame, g_frame_buffer, FRAME_SIZE);
-        g_delta_count = 0;  // Full frame
+        g_delta_count = 0;
         g_frame_sequence++;
         g_pending_frame = true;
         spin_unlock(g_frame_lock, irq);
+
+        pbuf_free(p);
+        return;
+    }
+
+    // NTR-HR packet format:
+    // Byte 0: frame_id (increments per frame)
+    // Byte 1: screen (0=bottom, 1=top) | 0x10 if last packet
+    // Byte 2: format (bit 0: 0=JPEG, 1=lossless)
+    // Byte 3: packet sequence number (0, 1, 2, ...)
+    // Byte 4+: JPEG data (1444 bytes typical)
+
+    if (p->tot_len >= 4) {
+        uint8_t header[4];
+        pbuf_copy_partial(p, header, 4, 0);
+
+        // Store for debug
+        g_ntr_packets_received++;
+        memcpy((void*)g_ntr_last_header, header, 4);
+
+        uint8_t frame_id = header[0];
+        uint8_t screen_flags = header[1];
+        bool is_last = (screen_flags & 0x10) != 0;
+        // NTR-HR: hdr[1] & 0x0F: 0=bottom, 1=top (inverted from what you'd expect)
+        // In ntrviewer: top_bot = !recv_hdr[1], so hdr[1]=1 means top
+        bool is_top = (screen_flags & 0x0F) == 1;  // 1 = top screen
+        bool is_lossless = (header[2] & 0x01) != 0;
+        uint8_t packet_num = header[3];
+
+        // Process top screen in JPEG mode only (lossless removed to save RAM)
+        if (is_top && !is_lossless) {
+            // JPEG mode - assemble JPEG packets
+            constexpr size_t NTR_JPEG_PAYLOAD_OFFSET = 4;  // Just the 4-byte header
+
+            if (frame_id != g_jpeg_frame_id) {
+                // New frame - reset JPEG buffer
+                g_jpeg_frame_id = frame_id;
+                g_jpeg_size = 0;
+                g_jpeg_packets_received = 0;
+                g_jpeg_last_packet_num = 0;
+                g_jpeg_got_last = false;
+            }
+
+            // Copy JPEG data (payload after 4-byte header)
+            size_t data_len = (p->tot_len > NTR_JPEG_PAYLOAD_OFFSET) ?
+                              p->tot_len - NTR_JPEG_PAYLOAD_OFFSET : 0;
+
+            // Place at correct offset based on packet number
+            // JPEG packets are typically 1444 bytes payload each
+            size_t offset = packet_num * 1444;
+
+            if (data_len > 0 && offset + data_len <= sizeof(g_jpeg_buffer)) {
+                pbuf_copy_partial(p, g_jpeg_buffer + offset, data_len, NTR_JPEG_PAYLOAD_OFFSET);
+                g_jpeg_packets_received++;
+
+                // Track total size (highest offset + data)
+                if (offset + data_len > g_jpeg_size) {
+                    g_jpeg_size = offset + data_len;
+                }
+            }
+
+            if (packet_num > g_jpeg_last_packet_num) {
+                g_jpeg_last_packet_num = packet_num;
+            }
+
+            if (is_last) {
+                g_jpeg_got_last = true;
+            }
+
+            // Process when we have all packets
+            uint8_t expected = g_jpeg_last_packet_num + 1;
+            bool complete = g_jpeg_got_last && (g_jpeg_packets_received == expected);
+
+            if (complete && !g_pending_frame && g_jpeg_size > 0) {
+                process_jpeg_frame();
+                g_jpeg_size = 0;
+                g_jpeg_got_last = false;
+            }
+        }
+        // Lossless mode packets are ignored (use JPEG mode on 3DS)
     }
 
     pbuf_free(p);
@@ -551,7 +802,7 @@ bool init(uint16_t port) {
 
     tcp_accept(server_pcb, tcp_accept_callback);
 
-    // Also set up UDP server on same port for low-latency streaming
+    // Also set up UDP server on same port for low-latency streaming (32x32 raw frames)
     udp_server_pcb = udp_new();
     if (udp_server_pcb) {
         err = udp_bind(udp_server_pcb, IP_ADDR_ANY, port);
@@ -564,6 +815,24 @@ bool init(uint16_t port) {
             udp_server_pcb = nullptr;
         }
     }
+
+    // Set up NTR streaming UDP server on port 8001
+    ntr_server_pcb = udp_new();
+    if (ntr_server_pcb) {
+        err = udp_bind(ntr_server_pcb, IP_ADDR_ANY, 8001);
+        if (err == ERR_OK) {
+            udp_recv(ntr_server_pcb, udp_recv_callback, nullptr);
+            printf("NTR UDP server started on port 8001\n");
+        } else {
+            printf("Failed to bind NTR UDP: %d\n", err);
+            udp_remove(ntr_server_pcb);
+            ntr_server_pcb = nullptr;
+        }
+    }
+
+    // KCP Reliable Stream disabled - uses too much RAM (64KB+ for segment tables)
+    // JPEG mode is now the preferred fallback for reliable streaming
+    printf("KCP disabled (RAM), using JPEG mode fallback\n");
 
     cyw43_arch_lwip_end();
 
@@ -580,6 +849,10 @@ void stop() {
     if (udp_server_pcb) {
         udp_remove(udp_server_pcb);
         udp_server_pcb = nullptr;
+    }
+    if (ntr_server_pcb) {
+        udp_remove(ntr_server_pcb);
+        ntr_server_pcb = nullptr;
     }
     cyw43_arch_lwip_end();
 }

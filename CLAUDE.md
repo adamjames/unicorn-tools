@@ -37,6 +37,13 @@ python tools/cosmic_cast.py       # Stream desktop screen to LED panel
 python tools/cosmic_mock.py       # Mock LED panel for testing without hardware
 ```
 
+### NTR-HR (3DS High-Resolution Streaming)
+```bash
+ntrviewer-hr                      # Run NTRViewer-HR (3DS streaming viewer)
+cosmic-ntr-download               # Download NTR-HR CIAs for 3DS
+cosmic-ntr-deploy [dir] [ip] [port]  # Deploy CIAs to 3DS via FTP
+```
+
 ## Architecture
 
 ### Firmware (`firmware/cosmic/`)
@@ -57,5 +64,6 @@ HTTP POST of raw RGB888 frames (32x32x3 = 3072 bytes) to panel's WiFi endpoint. 
 - `flake.nix` - Main Nix flake, imports modules from `nix/`
 - `nix/pico.nix` - Pico SDK environment, requires WiFi-capable pico-sdk submodule
 - `nix/3ds.nix` - 3DS Docker builds, includes 3gxtool Nix derivation
-- `nix/tools.nix` - Python environment with pygame, pyserial, websockets, GStreamer
+- `nix/tools.nix` - Python environment with pygame, pyserial, websockets, GStreamer, and NTR-HR binaries
 - `firmware/cosmic/CMakeLists.txt` - Pico firmware build (full and lite targets)
+- Bash(cp /home/adam/Shells/unicorn-reference/firmware/cosmic/build/cosmic-lite.uf2 /run/media/adam/RP2350/ && echo "Firmware copied!") is how to deploy

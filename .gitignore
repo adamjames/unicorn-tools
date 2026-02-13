@@ -23,6 +23,15 @@ firmware/3ds/launcher/*.3dsx
 firmware/3ds/launcher/*.elf
 firmware/3ds/*.cxi
 
+# NTR-HR (cloned subproject)
+firmware/3ds/ntr-hr/
+
+# NTR-HR source repos (cloned for building)
+tools/ntr-hr-src/
+tools/ntr-hr/
+tools/ntrviewer-hr-src/
+tools/ntrviewer-hr/
+
 # Editor/IDE
 .idea/
 .vscode/
