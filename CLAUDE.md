@@ -74,5 +74,5 @@ Using the full path to the build directory and the path to which the Pico's stor
 ````bash
     cp build/cosmic-lite.uf2 \
     /run/media/adam/RP2350/ \
-    && echo "Firmware copied!"`
+    && echo "Firmware copied!"
 ````
