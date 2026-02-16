@@ -69,7 +69,10 @@ HTTP POST of raw RGB888 frames (32x32x3 = 3072 bytes) to panel's WiFi endpoint. 
 
 # Deployment
 
-Execute the command: 
+Using the full path to the build directory and the path to which the Pico's storage is mounted, execute the command: 
+
 ``bash
-cp /home/adam/Shells/unicorn-reference/firmware/cosmic/build/cosmic-lite.uf2 /run/media/adam/RP2350/ && echo "Firmware copied!"`
+     cp build/cosmic-lite.uf2 \
+     /run/media/adam/RP2350/ 
+     && echo "Firmware copied!"`
 ``
