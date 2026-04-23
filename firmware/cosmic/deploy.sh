@@ -96,7 +96,7 @@ echo ""
 echo "[3/4] Waiting for bootloader USB mount..."
 MOUNT_POINT=""
 for i in {1..30}; do
-    MOUNT_POINT=$(find /run/media /media -maxdepth 2 -name "RP235*" -type d 2>/dev/null | head -1)
+    MOUNT_POINT=$(find /run/media /media -maxdepth 2 \( -name "RP235*" -o -name "RPI-RP2*" -o -name "RP2*" \) -type d 2>/dev/null | head -1 || true)
     if [[ -n "$MOUNT_POINT" && -f "$MOUNT_POINT/INFO_UF2.TXT" ]]; then
         break
     fi
